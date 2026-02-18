@@ -1,0 +1,1032 @@
+<template>
+    <!-- ═══════════════ LOADING SPINNER ═══════════════ -->
+    <template lwc:if={isLoading}>
+        <lightning-spinner alternative-text="Loading" size="medium"></lightning-spinner>
+    </template>
+
+    <!-- ═══════════════ ERROR STATE ═══════════════ -->
+    <template lwc:if={hasError}>
+        <div class="slds-notify slds-notify_alert slds-alert_error slds-m-bottom_medium" role="alert">
+            <span class="slds-assistive-text">error</span>
+            <lightning-icon icon-name="utility:error" alternative-text="error" variant="inverse" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+            <h2>{errorMessage}</h2>
+        </div>
+    </template>
+
+    <!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+    <template lwc:if={isReady}>
+
+        <!-- PROGRESS INDICATOR -->
+        <lightning-progress-indicator current-step={currentStep} type="path" variant="base" class="slds-m-bottom_medium">
+            <lightning-progress-step label="Change Type" value="0"></lightning-progress-step>
+            <template lwc:if={isTransferPath}>
+                <lightning-progress-step label="Select Program" value="1"></lightning-progress-step>
+                <lightning-progress-step label="Transfer Details" value="2"></lightning-progress-step>
+                <lightning-progress-step label="Review &amp; Confirm" value="3"></lightning-progress-step>
+                <lightning-progress-step label="Complete" value="4"></lightning-progress-step>
+            </template>
+            <template lwc:if={isCancellationPath}>
+                <lightning-progress-step label="Cancellation Details" value="1"></lightning-progress-step>
+                <template lwc:if={requiresSettlementScreen}>
+                    <lightning-progress-step label="Settlement" value="2"></lightning-progress-step>
+                </template>
+                <lightning-progress-step label="Review &amp; Confirm" value="3"></lightning-progress-step>
+                <lightning-progress-step label="Complete" value="4"></lightning-progress-step>
+            </template>
+            <template lwc:if={isSubstitutionPath}>
+                <lightning-progress-step label="Substitution Details" value="1"></lightning-progress-step>
+                <lightning-progress-step label="Review &amp; Confirm" value="2"></lightning-progress-step>
+                <lightning-progress-step label="Complete" value="3"></lightning-progress-step>
+            </template>
+        </lightning-progress-indicator>
+
+        <!-- ═══════════ WARNING BANNER (Transfer Steps 1-3) ═══════════ -->
+        <template lwc:if={showWarningBanner}>
+            <div class="warning-banner slds-m-bottom_medium">
+                <lightning-icon icon-name="utility:warning" alternative-text="warning" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                <span>Please complete all steps of this process. Clicking away will result in an incomplete update with inaccurate financial information.</span>
+            </div>
+        </template>
+
+        <!-- ═══════════ STEP 0: CHANGE TYPE SELECTION ═══════════ -->
+        <template lwc:if={isStep0}>
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="slds-text-heading_small slds-m-bottom_small">Cancellations, Transfers and Substitution</div>
+                <fieldset class="slds-form-element">
+                    <legend class="slds-form-element__legend slds-form-element__label">
+                        <abbr class="slds-required" title="required">*</abbr> Change Type
+                    </legend>
+                    <div class="slds-form-element__control">
+                        <div class="slds-visual-picker slds-visual-picker_vertical">
+                            <input type="radio" id="change-cancel" value="Cancellation" name="changeType"
+                                checked={isCancellationSelected} onchange={handleChangeTypeSelect} />
+                            <label for="change-cancel">
+                                <span class="slds-visual-picker__figure slds-visual-picker__text slds-align_absolute-center">
+                                    <span>
+                                        <span class="slds-text-heading_small">Cancellation</span>
+                                        <span class="slds-text-title slds-m-top_xx-small">Cancel the current registration and process refund/credit</span>
+                                    </span>
+                                </span>
+                            </label>
+
+                            <input type="radio" id="change-substitution" value="Substitution" name="changeType"
+                                checked={isSubstitutionSelected} onchange={handleChangeTypeSelect} />
+                            <label for="change-substitution">
+                                <span class="slds-visual-picker__figure slds-visual-picker__text slds-align_absolute-center">
+                                    <span>
+                                        <span class="slds-text-heading_small">Substitution</span>
+                                        <span class="slds-text-title slds-m-top_xx-small">Replace the registrant with a different person for the same program</span>
+                                    </span>
+                                </span>
+                            </label>
+
+                            <input type="radio" id="change-transfer" value="Transfer" name="changeType"
+                                checked={isTransferSelected} onchange={handleChangeTypeSelect} />
+                            <label for="change-transfer">
+                                <span class="slds-visual-picker__figure slds-visual-picker__text slds-align_absolute-center">
+                                    <span>
+                                        <span class="slds-text-heading_small">Transfer</span>
+                                        <span class="slds-text-title slds-m-top_xx-small">Transfer the registrant to a different program</span>
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Current Registration Info -->
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="section-header slds-m-bottom_x-small">Current Registration</div>
+                <div class="slds-grid slds-wrap slds-gutters_x-small">
+                    <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                        <span class="field-label">Attendee:</span>
+                        <span class="slds-m-left_xx-small">{attendeeName}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                        <span class="field-label">Current Program:</span>
+                        <span class="slds-m-left_xx-small">{currentProgramName}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                        <span class="field-label">Opportunity:</span>
+                        <span class="slds-m-left_xx-small">{originalOppName}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                        <span class="field-label">Current Fee:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalFee}</span>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ TRANSFER STEP 1: SELECT PROGRAM ═══════════ -->
+        <template lwc:if={isTransferStep1}>
+            <!-- Registration & Financial Summary -->
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="section-header slds-m-bottom_x-small">Original Registration Details: {currentProgramName}</div>
+                <div class="slds-grid slds-wrap slds-gutters_x-small">
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Payment Status:</span>
+                        <span class="slds-m-left_xx-small">{paymentStatus}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Program Fee:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalFee}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Discount Amount:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalDiscount}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Registration Total:</span>
+                        <span class="slds-m-left_xx-small">{formattedRegistrationTotal}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Payment Balance:</span>
+                        <span class="slds-m-left_xx-small">{formattedPaymentBalance}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Program Search -->
+            <div class="slds-m-bottom_small">
+                <div style="color: #ffffff; font-size: 0.9375rem;" class="slds-m-bottom_xx-small">Search Programs</div>
+                <lightning-input
+                    type="search"
+                    label="Search Programs"
+                    variant="label-hidden"
+                    placeholder="Search by name, program code, or acronym..."
+                    value={programSearchTerm}
+                    onchange={handleProgramSearch}>
+                </lightning-input>
+            </div>
+
+            <template lwc:if={hasFilteredPrograms}>
+                <div class="slds-scrollable_y program-table-container">
+                    <lightning-datatable
+                        key-field="Id"
+                        data={filteredPrograms}
+                        columns={programColumns}
+                        selected-rows={selectedProgramRows}
+                        max-row-selection="1"
+                        onrowselection={handleProgramSelect}
+                        wrap-text-max-lines="2">
+                    </lightning-datatable>
+                </div>
+            </template>
+            <template lwc:elseif={programSearchTerm}>
+                <div class="slds-align_absolute-center slds-p-around_large" style="color: #e0deda; font-size: 0.9375rem;">
+                    No programs found matching "{programSearchTerm}"
+                </div>
+            </template>
+            <template lwc:else>
+                <div class="slds-align_absolute-center slds-p-around_large" style="color: #e0deda; font-size: 0.9375rem;">
+                    Start typing to search for a program
+                </div>
+            </template>
+
+            <template lwc:if={selectedProgram}>
+                <div class="slds-box slds-box_xx-small selected-program-box slds-m-top_medium">
+                    <div class="section-header slds-m-bottom_x-small">Selected Program</div>
+                    <div class="slds-grid slds-wrap slds-gutters_x-small">
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                            <span class="field-label">Program:</span>
+                            <span class="slds-m-left_xx-small"><strong>{selectedProgram.Name}</strong></span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                            <span class="field-label">Code:</span>
+                            <span class="slds-m-left_xx-small">{selectedProgram.Program_Code__c}</span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                            <span class="field-label">Start Date:</span>
+                            <span class="slds-m-left_xx-small">{selectedProgramStartDate}</span>
+                        </div>
+                        <div class="slds-col slds-size_1-of-2 slds-m-bottom_xx-small">
+                            <span class="field-label">Expected Fee:</span>
+                            <span class="slds-m-left_xx-small">{formattedExpectedFee}</span>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </template>
+
+        <!-- ═══════════ TRANSFER STEP 2: TRANSFER DETAILS ═══════════ -->
+        <template lwc:if={isTransferStep2}>
+            <!-- Financial Summary (carried forward) -->
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="section-header slds-m-bottom_x-small">Original Registration Details: {currentProgramName}</div>
+                <div class="slds-grid slds-wrap slds-gutters_x-small">
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Payment Status:</span>
+                        <span class="slds-m-left_xx-small">{paymentStatus}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Program Fee:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalFee}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Discount Amount:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalDiscount}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Registration Total:</span>
+                        <span class="slds-m-left_xx-small">{formattedRegistrationTotal}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Payment Balance:</span>
+                        <span class="slds-m-left_xx-small">{formattedPaymentBalance}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slds-grid slds-wrap slds-gutters_small">
+                <!-- Program Fee -->
+                <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
+                    <div class="slds-section slds-is-open">
+                        <h3 class="slds-section__title">
+                            <span class="slds-truncate slds-p-horizontal_small" title="Program Fee">Program Fee</span>
+                        </h3>
+                        <div class="slds-section__content slds-p-around_small">
+                            <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">New Program Fee Amount</div>
+                            <lightning-input
+                                type="number"
+                                label="New Program Fee Amount"
+                                variant="label-hidden"
+                                value={newProgramFeeAmount}
+                                formatter="currency"
+                                step="0.01"
+                                onchange={handleFeeChange}
+                                class="slds-m-bottom_small">
+                            </lightning-input>
+                            <div style="color: #c9c7c5; font-size: 0.8125rem;">
+                                Original Fee: {formattedOriginalFee} | Expected Fee for new program: {formattedExpectedFee}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transfer Fee -->
+                <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
+                    <div class="slds-section slds-is-open">
+                        <h3 class="slds-section__title">
+                            <span class="slds-truncate slds-p-horizontal_small" title="Transfer Fee">Transfer Fee</span>
+                        </h3>
+                        <div class="slds-section__content slds-p-around_small">
+                            <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Apply Transfer Fee</div>
+                            <lightning-input
+                                type="toggle"
+                                label="Apply Transfer Fee"
+                                variant="label-hidden"
+                                checked={applyTransferFee}
+                                onchange={handleTransferFeeToggle}
+                                message-toggle-active="Yes"
+                                message-toggle-inactive="No"
+                                class="slds-m-bottom_small">
+                            </lightning-input>
+                            <template lwc:if={applyTransferFee}>
+                                <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Transfer Fee Amount</div>
+                                <lightning-input
+                                    type="number"
+                                    label="Transfer Fee Amount"
+                                    variant="label-hidden"
+                                    value={transferFeeAmount}
+                                    formatter="currency"
+                                    step="0.01"
+                                    onchange={handleTransferFeeAmountChange}>
+                                </lightning-input>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settlement Type -->
+                <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
+                    <div class="slds-section slds-is-open">
+                        <h3 class="slds-section__title">
+                            <span class="slds-truncate slds-p-horizontal_small" title="Settlement">Settlement</span>
+                        </h3>
+                        <div class="slds-section__content slds-p-around_small">
+                            <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Settlement Type</div>
+                            <lightning-combobox
+                                name="settlementType"
+                                label="Settlement Type"
+                                variant="label-hidden"
+                                value={settlementType}
+                                placeholder="Select settlement type..."
+                                options={settlementOptions}
+                                onchange={handleSettlementChange}
+                                class="slds-m-bottom_small">
+                            </lightning-combobox>
+                            <template lwc:if={showSettlementInfo}>
+                                <div class="slds-box slds-box_xx-small slds-theme_default slds-m-top_small">
+                                    <div class="slds-text-body_small">
+                                        Net Credit Amount: <strong>{formattedNetCredit}</strong>
+                                    </div>
+                                    <div class="field-label slds-m-top_xx-small">
+                                        {settlementDescription}
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Discount -->
+                <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
+                    <div class="slds-section slds-is-open">
+                        <h3 class="slds-section__title">
+                            <span class="slds-truncate slds-p-horizontal_small" title="Discount">Discount</span>
+                        </h3>
+                        <div class="slds-section__content slds-p-around_small">
+                            <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Apply Discount to New Registration</div>
+                            <lightning-input
+                                type="toggle"
+                                label="Apply Discount"
+                                variant="label-hidden"
+                                checked={applyDiscount}
+                                onchange={handleDiscountToggle}
+                                message-toggle-active="Yes"
+                                message-toggle-inactive="No"
+                                class="slds-m-bottom_small">
+                            </lightning-input>
+                            <template lwc:if={applyDiscount}>
+                                <div class="slds-grid slds-gutters_small">
+                                    <div class="slds-col slds-size_1-of-2">
+                                        <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Discount Amount</div>
+                                        <lightning-input
+                                            type="number"
+                                            label="Discount Amount"
+                                            variant="label-hidden"
+                                            value={discountAmount}
+                                            formatter="currency"
+                                            step="0.01"
+                                            onchange={handleDiscountAmountChange}>
+                                        </lightning-input>
+                                    </div>
+                                    <div class="slds-col slds-size_1-of-2">
+                                        <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Discount Code</div>
+                                        <lightning-input
+                                            type="text"
+                                            label="Discount Code"
+                                            variant="label-hidden"
+                                            value={discountCode}
+                                            onchange={handleDiscountCodeChange}>
+                                        </lightning-input>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comments -->
+                <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
+                    <div class="slds-section slds-is-open">
+                        <h3 class="slds-section__title">
+                            <span class="slds-truncate slds-p-horizontal_small" title="Comments">Comments</span>
+                        </h3>
+                        <div class="slds-section__content slds-p-around_small">
+                            <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Registration Change Comments</div>
+                            <lightning-textarea
+                                label="Registration Change Comments"
+                                variant="label-hidden"
+                                value={regChangeComments}
+                                onchange={handleCommentsChange}
+                                max-length="5000"
+                                placeholder="Enter reason for transfer...">
+                            </lightning-textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ TRANSFER STEP 3: REVIEW & CONFIRM ═══════════ -->
+        <template lwc:if={isTransferStep3}>
+            <div class="slds-m-bottom_medium">
+                <div style="color: #ffffff; font-size: 1.0rem; font-weight: 600;" class="slds-m-bottom_small">Transfer Summary</div>
+
+                <div class="slds-grid slds-gutters_small slds-m-bottom_medium">
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-box slds-box_xx-small slds-theme_default">
+                            <div class="section-header slds-text-color_error slds-m-bottom_x-small">Transferring FROM</div>
+                            <div class="slds-m-bottom_xx-small"><strong>{currentProgramName}</strong></div>
+                            <div class="field-label">{originalOppName}</div>
+                            <div class="slds-text-body_small">Original Fee: {formattedOriginalFee}</div>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-box slds-box_xx-small slds-theme_default">
+                            <div class="section-header slds-text-color_success slds-m-bottom_x-small">Transferring TO</div>
+                            <div class="slds-m-bottom_xx-small"><strong>{selectedProgram.Name}</strong></div>
+                            <div class="field-label">{selectedProgram.Program_Code__c}</div>
+                            <div class="slds-text-body_small">New Program Fee: {formattedNewFee}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-m-bottom_medium">
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th scope="col"><div class="slds-truncate" title="Item">Item</div></th>
+                            <th scope="col" class="slds-text-align_right"><div class="slds-truncate" title="Amount">Amount</div></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Original Program Fee Credit</td>
+                            <td class="slds-text-align_right">{formattedCreditAmount}</td>
+                        </tr>
+                        <template lwc:if={applyTransferFee}>
+                            <tr>
+                                <td>Transfer Fee</td>
+                                <td class="slds-text-align_right">{formattedTransferFee}</td>
+                            </tr>
+                        </template>
+                        <tr>
+                            <td>New Program Fee</td>
+                            <td class="slds-text-align_right">{formattedNewFee}</td>
+                        </tr>
+                        <template lwc:if={applyDiscount}>
+                            <tr>
+                                <td>Discount{reviewDiscountCode}</td>
+                                <td class="slds-text-align_right">{formattedDiscountAmount}</td>
+                            </tr>
+                        </template>
+                        <template lwc:if={settlementType}>
+                            <tr class="slds-hint-parent">
+                                <td><strong>Settlement ({settlementType})</strong></td>
+                                <td class="slds-text-align_right"><strong>{formattedNetCredit}</strong></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <template lwc:if={regChangeComments}>
+                    <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                        <div class="section-header slds-m-bottom_xx-small">Comments</div>
+                        <div class="slds-text-body_small">{regChangeComments}</div>
+                    </div>
+                </template>
+
+                <div class="slds-box slds-box_xx-small slds-theme_default">
+                    <div class="section-header slds-m-bottom_x-small">Actions to be performed</div>
+                    <ul class="slds-list_dotted slds-text-body_small">
+                        <li>Credit original program fee on current Opportunity</li>
+                        <template lwc:if={applyTransferFee}><li>Apply transfer fee to current Opportunity</li></template>
+                        <li>Mark current Attendee as "Transferred"</li>
+                        <li>Set current Opportunity stage to "Transferred Out"</li>
+                        <li>Create new Opportunity with "Registered" stage</li>
+                        <li>Create new Attendee record linked to new program</li>
+                        <li>Move existing payments to new Opportunity</li>
+                        <template lwc:if={settlementType}>
+                            <li>Create {settlementType} record for net credit</li>
+                        </template>
+                        <template lwc:if={applyDiscount}><li>Apply discount to new Opportunity</li></template>
+                    </ul>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ TRANSFER STEP 4: COMPLETE ═══════════ -->
+        <template lwc:if={isTransferStep4}>
+            <div class="slds-align_absolute-center slds-p-around_large">
+                <div class="slds-text-align_center">
+                    <lightning-icon icon-name="action:approval" size="large" class="slds-m-bottom_medium"></lightning-icon>
+                    <h2 class="slds-text-heading_medium slds-m-bottom_small" style="color: #ffffff;">Transfer Complete!</h2>
+                    <p class="slds-text-body_regular slds-m-bottom_medium" style="color: #e0deda;">
+                        {attendeeName} has been transferred to <strong>{selectedProgram.Name}</strong>.
+                    </p>
+                    <div class="slds-m-bottom_small">
+                        <a href={newOppUrl} target="_blank" class="result-link">
+                            <lightning-icon icon-name="standard:opportunity" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                            View New Opportunity
+                        </a>
+                    </div>
+                    <div class="slds-m-bottom_medium">
+                        <a href={newAttendeeUrl} target="_blank" class="result-link">
+                            <lightning-icon icon-name="standard:event" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                            View New Attendee
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ CANCELLATION STEP 1: CANCELLATION DETAILS ═══════════ -->
+        <template lwc:if={isCancellationStep1}>
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="slds-text-heading_small slds-m-bottom_small">Cancellations, Transfers and Substitution</div>
+                <p class="slds-m-bottom_small">This registration is <strong>{paymentStatus}</strong>.</p>
+                <p class="slds-m-bottom_medium">The fee for this registration was: <strong>{formattedRegistrationTotal}</strong></p>
+
+                <p class="slds-m-bottom_small">Do you want to add a cancellation fee?</p>
+
+                <div class="slds-form-element slds-m-bottom_medium">
+                    <label class="slds-form-element__label" style="color: #ffffff;">Add Cancellation Fee</label>
+                    <div class="slds-form-element__control">
+                        <div class="slds-radio_button-group">
+                            <span class="slds-button slds-radio_button">
+                                <input type="radio" name="cancelFee" id="cancelFeeYes" value="yes"
+                                    checked={applyCancellationFee}
+                                    onchange={handleCancelFeeToggle} />
+                                <label class="slds-radio_button__label" for="cancelFeeYes">
+                                    <span class="slds-radio_faux">Yes</span>
+                                </label>
+                            </span>
+                            <span class="slds-button slds-radio_button">
+                                <input type="radio" name="cancelFee" id="cancelFeeNo" value="no"
+                                    checked={notApplyCancellationFee}
+                                    onchange={handleCancelFeeToggle} />
+                                <label class="slds-radio_button__label" for="cancelFeeNo">
+                                    <span class="slds-radio_faux">No</span>
+                                </label>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <template lwc:if={applyCancellationFee}>
+                    <div class="slds-m-bottom_medium">
+                        <lightning-input
+                            type="number"
+                            label="Cancellation Fee"
+                            value={cancellationFeeAmount}
+                            formatter="currency"
+                            step="0.01"
+                            onchange={handleCancelFeeAmountChange}
+                            required>
+                        </lightning-input>
+                    </div>
+                </template>
+
+                <lightning-textarea
+                    label="Cancel Request Comments"
+                    value={cancelComments}
+                    onchange={handleCancelCommentsChange}
+                    max-length="5000"
+                    placeholder="Enter reason for cancellation...">
+                </lightning-textarea>
+            </div>
+        </template>
+
+        <!-- ═══════════ CANCELLATION STEP 2: SETTLEMENT (Paid/Partial Only) ═══════════ -->
+        <template lwc:if={isCancellationStep2}>
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="slds-text-heading_small slds-m-bottom_small">Settlement</div>
+
+                <template lwc:if={isBundledRegistration}>
+                    <p class="slds-m-bottom_small">This registration is part of a <strong>partially paid bundled registration</strong>.</p>
+                    <p class="slds-m-bottom_small">Total for this Registration: <strong>{formattedRegistrationTotal}</strong></p>
+                </template>
+                <template lwc:else>
+                    <p class="slds-m-bottom_small">This registration has been <strong>{paymentStatus}</strong>.</p>
+                    <p class="slds-m-bottom_small">Registration Total: <strong>{formattedRegistrationTotal}</strong></p>
+                </template>
+
+                <template lwc:if={applyCancellationFee}>
+                    <p class="slds-m-bottom_small">Cancellation Fee: <strong>{formattedCancellationFee}</strong></p>
+                </template>
+
+                <p class="slds-m-bottom_medium">Refund Amount: <strong>{formattedCancellationRefund}</strong></p>
+
+                <p class="slds-m-bottom_small">Please select how the funds should be settled:</p>
+
+                <lightning-radio-group
+                    name="cancelSettlement"
+                    label="Settlement Type"
+                    options={cancelSettlementOptions}
+                    value={cancelSettlementType}
+                    onchange={handleCancelSettlementChange}
+                    required
+                    class="slds-m-bottom_medium">
+                </lightning-radio-group>
+
+                <template lwc:if={cancelSettlementType}>
+                    <div class="slds-box slds-box_xx-small slds-theme_shade slds-m-top_small">
+                        <p class="slds-text-body_small">{cancelSettlementDescription}</p>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <!-- ═══════════ CANCELLATION STEP 3: REVIEW & CONFIRM ═══════════ -->
+        <template lwc:if={isCancellationStep3}>
+            <div class="slds-m-bottom_medium">
+                <div style="color: #ffffff; font-size: 1.0rem; font-weight: 600;" class="slds-m-bottom_small">Cancellation Summary</div>
+
+                <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                    <div class="section-header slds-text-color_error slds-m-bottom_x-small">Cancelling Registration</div>
+                    <div class="slds-m-bottom_xx-small"><strong>{currentProgramName}</strong></div>
+                    <div class="field-label">{originalOppName}</div>
+                    <div class="slds-m-bottom_xx-small">Attendee: <strong>{attendeeName}</strong></div>
+                </div>
+
+                <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-m-bottom_medium">
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th scope="col"><div class="slds-truncate" title="Item">Item</div></th>
+                            <th scope="col" class="slds-text-align_right"><div class="slds-truncate" title="Amount">Amount</div></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Registration Total</td>
+                            <td class="slds-text-align_right">{formattedRegistrationTotal}</td>
+                        </tr>
+                        <tr>
+                            <td>Cancellation Credit</td>
+                            <td class="slds-text-align_right">{formattedCreditAmount}</td>
+                        </tr>
+                        <template lwc:if={applyCancellationFee}>
+                            <tr>
+                                <td>Cancellation Fee</td>
+                                <td class="slds-text-align_right">{formattedCancellationFee}</td>
+                            </tr>
+                        </template>
+                        <template lwc:if={cancelSettlementType}>
+                            <tr class="slds-hint-parent">
+                                <td><strong>Settlement ({cancelSettlementType})</strong></td>
+                                <td class="slds-text-align_right"><strong>{formattedCancellationRefund}</strong></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <template lwc:if={cancelComments}>
+                    <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                        <div class="section-header slds-m-bottom_xx-small">Comments</div>
+                        <div class="slds-text-body_small">{cancelComments}</div>
+                    </div>
+                </template>
+
+                <div class="slds-box slds-box_xx-small slds-theme_default">
+                    <div class="section-header slds-m-bottom_x-small">Actions to be performed</div>
+                    <ul class="slds-list_dotted slds-text-body_small">
+                        <li>Mark Attendee status as "Cancelled"</li>
+                        <li>Create cancellation credit line item</li>
+                        <template lwc:if={applyCancellationFee}><li>Apply cancellation fee</li></template>
+                        <li>Set Opportunity stage to "Canceled"</li>
+                        <li>Set "Revise Invoice" flag</li>
+                        <template lwc:if={isSettlementRefund}>
+                            <li>Create Task to process refund of {formattedCancellationRefund}</li>
+                        </template>
+                        <template lwc:if={isSettlementUnappliedFunds}>
+                            <li>Create Unapplied Funds record for {formattedCancellationRefund}</li>
+                        </template>
+                        <template lwc:if={isSettlementApplyToBalance}>
+                            <li>Apply to remaining balance on bundled registration</li>
+                        </template>
+                    </ul>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ CANCELLATION STEP 4: COMPLETE ═══════════ -->
+        <template lwc:if={isCancellationStep4}>
+            <div class="slds-align_absolute-center slds-p-around_large">
+                <div class="slds-text-align_center">
+                    <lightning-icon icon-name="action:approval" size="large" class="slds-m-bottom_medium"></lightning-icon>
+                    <h2 class="slds-text-heading_medium slds-m-bottom_small" style="color: #ffffff;">Cancellation Complete!</h2>
+                    <p class="slds-text-body_regular slds-m-bottom_medium" style="color: #e0deda;">
+                        {attendeeName}'s registration for <strong>{currentProgramName}</strong> has been cancelled.
+                    </p>
+
+                    <template lwc:if={showRefundInfo}>
+                        <div class="slds-box slds-box_xx-small slds-theme_warning slds-m-bottom_medium">
+                            <p class="slds-text-body_regular">
+                                Please don't forget to process the refund for <strong>{formattedCancellationRefund}</strong>.
+                            </p>
+                            <a href={cancellationPaymentUrl} target="_blank" class="result-link slds-m-top_small">
+                                <lightning-icon icon-name="standard:payment_gateway" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                                View Payment Record
+                            </a>
+                        </div>
+                    </template>
+
+                    <template lwc:if={showUnappliedFundsInfo}>
+                        <div class="slds-m-bottom_small">
+                            <a href={cancellationUnappliedFundsUrl} target="_blank" class="result-link">
+                                <lightning-icon icon-name="standard:currency" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                                View Unapplied Funds Record
+                            </a>
+                        </div>
+                    </template>
+
+                    <div class="slds-m-bottom_small">
+                        <a href={cancellationOppUrl} target="_blank" class="result-link">
+                            <lightning-icon icon-name="standard:opportunity" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                            View Opportunity
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ SUBSTITUTION STEP 1: SELECT SUBSTITUTE CONTACT ═══════════ -->
+        <template lwc:if={isSubstitutionStep1}>
+            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                <div class="section-header slds-m-bottom_x-small">Original Registration Details: {currentProgramName}</div>
+                <div class="slds-grid slds-wrap slds-gutters_x-small">
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Payment Status:</span>
+                        <span class="slds-m-left_xx-small">{paymentStatus}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Program Fee:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalFee}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Discount Amount:</span>
+                        <span class="slds-m-left_xx-small">{formattedOriginalDiscount}</span>
+                    </div>
+                    <div class="slds-col slds-size_1-of-3 slds-m-bottom_xx-small">
+                        <span class="field-label">Registration Total:</span>
+                        <span class="slds-m-left_xx-small">{formattedRegistrationTotal}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slds-m-bottom_medium">
+                <div style="color: #ffffff; font-size: 0.9375rem;" class="slds-m-bottom_xx-small">Select Substitution Contact</div>
+                <lightning-input
+                    type="search"
+                    label="Search Contacts"
+                    variant="label-hidden"
+                    placeholder="Search by name or email..."
+                    value={contactSearchTerm}
+                    onchange={handleContactSearch}>
+                </lightning-input>
+
+                <template lwc:if={isSearchingContacts}>
+                    <div class="slds-p-around_small">
+                        <lightning-spinner alternative-text="Searching..." size="small"></lightning-spinner>
+                    </div>
+                </template>
+
+                <template lwc:if={hasContactSearchResults}>
+                    <div class="slds-box slds-box_xx-small slds-m-top_small contact-results-container">
+                        <template for:each={contactSearchResults} for:item="contact">
+                            <div key={contact.id}
+                                 class="contact-result-item slds-p-around_x-small slds-border_bottom"
+                                 data-id={contact.id}
+                                 onclick={handleContactSelect}>
+                                <div class="slds-grid slds-grid_vertical-align-center">
+                                    <lightning-icon icon-name="standard:contact" size="small" class="slds-m-right_small"></lightning-icon>
+                                    <div>
+                                        <div class="slds-text-body_regular" style="color: #ffffff;"><strong>{contact.name}</strong></div>
+                                        <div class="slds-text-body_small" style="color: #c9c7c5;">{contact.email}</div>
+                                        <template lwc:if={contact.accountName}>
+                                            <div class="slds-text-body_small" style="color: #a0a0a0;">{contact.accountName}</div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <template lwc:elseif={contactSearchTerm}>
+                    <template lwc:if={isSearchingContacts}>
+                    </template>
+                    <template lwc:else>
+                        <div class="slds-p-around_small" style="color: #c9c7c5;">
+                            No contacts found matching "{contactSearchTerm}"
+                        </div>
+                    </template>
+                </template>
+            </div>
+
+            <template lwc:if={selectedContact}>
+                <div class="slds-box slds-box_xx-small selected-program-box slds-m-bottom_medium">
+                    <div class="section-header slds-m-bottom_x-small">Selected Substitute Contact</div>
+                    <div class="slds-grid slds-grid_vertical-align-center">
+                        <lightning-icon icon-name="standard:contact" size="small" class="slds-m-right_small"></lightning-icon>
+                        <div class="slds-grow">
+                            <div><strong>{selectedContact.name}</strong></div>
+                            <div class="field-label">{selectedContact.email}</div>
+                            <template lwc:if={selectedContact.accountName}>
+                                <div class="field-label">{selectedContact.accountName}</div>
+                            </template>
+                        </div>
+                        <lightning-button-icon
+                            icon-name="utility:close"
+                            alternative-text="Clear selection"
+                            onclick={handleClearContactSelection}
+                            variant="bare"
+                            size="medium">
+                        </lightning-button-icon>
+                    </div>
+                </div>
+            </template>
+
+            <template lwc:if={hasOriginalDiscount}>
+                <div class="slds-m-bottom_medium">
+                    <div class="slds-form-element">
+                        <label class="slds-form-element__label" style="color: #ffffff;">Apply Discount to New Registration</label>
+                        <div class="slds-form-element__control">
+                            <div class="slds-radio_button-group">
+                                <span class="slds-button slds-radio_button">
+                                    <input type="radio" name="subDiscount" id="subDiscountYes" value="yes"
+                                        checked={applySubstitutionDiscount}
+                                        onchange={handleSubstitutionDiscountToggle} />
+                                    <label class="slds-radio_button__label" for="subDiscountYes">
+                                        <span class="slds-radio_faux">Yes</span>
+                                    </label>
+                                </span>
+                                <span class="slds-button slds-radio_button">
+                                    <input type="radio" name="subDiscount" id="subDiscountNo" value="no"
+                                        checked={notApplySubstitutionDiscount}
+                                        onchange={handleSubstitutionDiscountToggle} />
+                                    <label class="slds-radio_button__label" for="subDiscountNo">
+                                        <span class="slds-radio_faux">No</span>
+                                    </label>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="slds-m-top_xx-small" style="color: #c9c7c5; font-size: 0.8125rem;">
+                        Original Discount: {formattedOriginalDiscount}
+                    </div>
+                </div>
+            </template>
+
+            <div class="slds-form-element">
+                <label class="slds-form-element__label custom-label-white">Substitution Request Comments</label>
+                <div class="slds-form-element__control">
+                    <lightning-textarea
+                        variant="label-hidden"
+                        value={substitutionComments}
+                        onchange={handleSubstitutionCommentsChange}
+                        max-length="5000"
+                        placeholder="Enter reason for substitution...">
+                    </lightning-textarea>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ SUBSTITUTION STEP 2: REVIEW & CONFIRM ═══════════ -->
+        <template lwc:if={isSubstitutionStep2}>
+            <div class="slds-m-bottom_medium">
+                <div style="color: #ffffff; font-size: 1.0rem; font-weight: 600;" class="slds-m-bottom_small">Substitution Summary</div>
+
+                <div class="slds-grid slds-gutters_small slds-m-bottom_medium">
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-box slds-box_xx-small slds-theme_default">
+                            <div class="section-header slds-text-color_error slds-m-bottom_x-small">Original Registrant (Substituting OUT)</div>
+                            <div class="slds-m-bottom_xx-small"><strong>{attendeeName}</strong></div>
+                            <div class="field-label">{currentProgramName}</div>
+                            <div class="slds-text-body_small">Registration Total: {formattedRegistrationTotal}</div>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-2">
+                        <div class="slds-box slds-box_xx-small slds-theme_default">
+                            <div class="section-header slds-text-color_success slds-m-bottom_x-small">Substitute Contact (Substituting IN)</div>
+                            <div class="slds-m-bottom_xx-small"><strong>{selectedContact.name}</strong></div>
+                            <div class="field-label">{selectedContact.email}</div>
+                            <template lwc:if={selectedContact.accountName}>
+                                <div class="slds-text-body_small">{selectedContact.accountName}</div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-m-bottom_medium">
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th scope="col"><div class="slds-truncate" title="Item">Item</div></th>
+                            <th scope="col" class="slds-text-align_right"><div class="slds-truncate" title="Amount">Amount</div></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Program Fee</td>
+                            <td class="slds-text-align_right">{formattedOriginalFee}</td>
+                        </tr>
+                        <template lwc:if={hasOriginalDiscount}>
+                            <tr>
+                                <td>Discount {discountAppliedLabel}</td>
+                                <td class="slds-text-align_right">{formattedOriginalDiscount}</td>
+                            </tr>
+                        </template>
+                        <tr class="slds-hint-parent">
+                            <td><strong>New Registration Total</strong></td>
+                            <td class="slds-text-align_right"><strong>{formattedRegistrationTotal}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <template lwc:if={substitutionComments}>
+                    <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                        <div class="section-header slds-m-bottom_xx-small">Comments</div>
+                        <div class="slds-text-body_small">{substitutionComments}</div>
+                    </div>
+                </template>
+
+                <div class="slds-box slds-box_xx-small slds-theme_default">
+                    <div class="section-header slds-m-bottom_x-small">Actions to be performed</div>
+                    <ul class="slds-list_dotted slds-text-body_small">
+                        <li>Mark original Attendee status as "Substitution"</li>
+                        <li>Set original Opportunity stage to "Closed Lost"</li>
+                        <li>Create "Substituted Out" credit line item on original Opportunity</li>
+                        <li>Create new Opportunity for substitute with "Substituted In" status</li>
+                        <li>Copy Program Fee to new Opportunity</li>
+                        <template lwc:if={hasOriginalDiscount}>
+                            <template lwc:if={applySubstitutionDiscount}>
+                                <li>Copy Discount to new Opportunity</li>
+                            </template>
+                        </template>
+                        <li>Create new Attendee record for substitute contact</li>
+                        <li>Move payments to new Opportunity (for standalone) or set Revise Invoice (for bundled)</li>
+                    </ul>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ SUBSTITUTION STEP 3: COMPLETE ═══════════ -->
+        <template lwc:if={isSubstitutionStep3}>
+            <div class="slds-align_absolute-center slds-p-around_large">
+                <div class="slds-text-align_center">
+                    <lightning-icon icon-name="action:approval" size="large" class="slds-m-bottom_medium"></lightning-icon>
+                    <h2 class="slds-text-heading_medium slds-m-bottom_small" style="color: #ffffff;">Substitution Complete!</h2>
+                    <p class="slds-text-body_regular slds-m-bottom_medium" style="color: #e0deda;">
+                        {attendeeName} has been substituted with <strong>{selectedContact.name}</strong> for <strong>{currentProgramName}</strong>.
+                    </p>
+                    <div class="slds-m-bottom_small">
+                        <a href={substitutionNewOppUrl} target="_blank" class="result-link">
+                            <lightning-icon icon-name="standard:opportunity" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                            View New Opportunity
+                        </a>
+                    </div>
+                    <div class="slds-m-bottom_medium">
+                        <a href={substitutionNewAttendeeUrl} target="_blank" class="result-link">
+                            <lightning-icon icon-name="standard:event" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                            View New Attendee
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ═══════════ FOOTER BUTTONS ═══════════ -->
+        <template lwc:if={showFooter}>
+            <div class="slds-m-top_medium slds-grid slds-grid_align-spread">
+                <div>
+                    <template lwc:if={showBackButton}>
+                        <lightning-button
+                            label="Back"
+                            variant="neutral"
+                            onclick={handleBack}
+                            disabled={isProcessing}>
+                        </lightning-button>
+                    </template>
+                </div>
+                <div>
+                    <lightning-button
+                        label="Cancel"
+                        variant="neutral"
+                        onclick={handleCancel}
+                        class="slds-m-right_small"
+                        disabled={isProcessing}>
+                    </lightning-button>
+                    <template lwc:if={isTransferStep3}>
+                        <lightning-button
+                            label={executeButtonLabel}
+                            variant="brand"
+                            onclick={handleExecuteTransfer}
+                            disabled={isProcessing}>
+                        </lightning-button>
+                    </template>
+                    <template lwc:elseif={isCancellationStep3}>
+                        <lightning-button
+                            label={executeButtonLabel}
+                            variant="brand"
+                            onclick={handleExecuteCancellation}
+                            disabled={isProcessing}>
+                        </lightning-button>
+                    </template>
+                    <template lwc:elseif={isSubstitutionStep2}>
+                        <lightning-button
+                            label={executeButtonLabel}
+                            variant="brand"
+                            onclick={handleExecuteSubstitution}
+                            disabled={isProcessing}>
+                        </lightning-button>
+                    </template>
+                    <template lwc:elseif={isStubStep}>
+                        <!-- No Next on stub screens -->
+                    </template>
+                    <template lwc:else>
+                        <lightning-button
+                            label="Next"
+                            variant="brand"
+                            onclick={handleNext}
+                            disabled={disableNext}>
+                        </lightning-button>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+    </template>
+</template>

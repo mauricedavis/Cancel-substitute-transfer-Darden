@@ -1,0 +1,17 @@
+﻿# Salesforce
+.sfdx/
+.sf/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if Jest tests added later)
+node_modules/
+coverage/

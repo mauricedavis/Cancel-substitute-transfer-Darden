@@ -1,0 +1,182 @@
+Test Case ID,Change Type,Test Scenario,Payment Status,Registration Type,Preconditions,Test Steps,Expected Results,Pass/Fail,Notes
+TC-C01,Cancellation,Cancel unpaid standalone registration - No fee,Not Paid,Standalone,"Attendee with 'Not Paid' status, standalone Opportunity (no parent)","1. Open LWC from Attendee record
+2. Select 'Cancellation' on Change Type screen
+3. Click Next
+4. On Cancellation Details: Select 'No' for cancellation fee
+5. Enter cancellation comments
+6. Click Next
+7. Review details on confirmation screen
+8. Click 'Execute Cancellation'","- Attendee status updated to 'Cancelled'
+- Opportunity stage set to 'Canceled'
+- No cancellation fee OLI created
+- Any pending payments cancelled
+- Success screen displayed",,
+TC-C02,Cancellation,Cancel unpaid standalone registration - With fee,Not Paid,Standalone,"Attendee with 'Not Paid' status, standalone Opportunity","1. Open LWC from Attendee record
+2. Select 'Cancellation'
+3. Click Next
+4. Select 'Yes' for cancellation fee
+5. Enter fee amount (e.g., $100)
+6. Enter comments
+7. Click Next
+8. Review and Execute","- Attendee status = 'Cancelled'
+- Opportunity stage = 'Canceled'
+- Cancellation Fee OLI created with entered amount
+- Cancellation Credit OLI created
+- Task created for follow-up",,
+TC-C03,Cancellation,Cancel paid standalone - Refund settlement,Paid,Standalone,"Attendee with 'Paid' status, standalone Opportunity with payment","1. Open LWC from Attendee record
+2. Select 'Cancellation'
+3. Click Next
+4. Configure cancellation fee (Yes/No)
+5. Click Next
+6. On Settlement screen: Select 'Refund'
+7. Click Next
+8. Review refund amount displayed
+9. Execute Cancellation","- Attendee status = 'Cancelled'
+- Opportunity stage = 'Canceled'
+- Cancellation Refund OLI created
+- Payment record created/updated for refund
+- Success screen shows refund link",,
+TC-C04,Cancellation,Cancel paid standalone - Unapplied Funds,Paid,Standalone,"Attendee with 'Paid' status, standalone Opportunity","1. Select 'Cancellation'
+2. Configure fee
+3. On Settlement: Select 'Unapplied Funds'
+4. Execute","- Unapplied_Funds__c record created
+- Transfer to Unapplied Funds OLI created
+- Success screen shows Unapplied Funds link",,
+TC-C05,Cancellation,Cancel paid standalone - Apply to Remaining Balance,Paid,Standalone,"Attendee with 'Paid' status, other open opportunities on account","1. Select 'Cancellation'
+2. Configure fee
+3. On Settlement: Select 'Apply to Remaining Balance'
+4. Execute","- Credit applied to account balance
+- Appropriate OLIs created
+- No refund or Unapplied Funds created",,
+TC-C06,Cancellation,Cancel partial payment registration,Partial Payment,Standalone,"Attendee with partial payment, standalone Opportunity","1. Select 'Cancellation'
+2. Configure fee
+3. Settlement screen should appear
+4. Select settlement option
+5. Execute","- Settlement screen displayed (partial payment treated like paid)
+- Appropriate Settlement action taken
+- All records updated correctly",,
+TC-C07,Cancellation,Cancel bundled registration - No fee,Not Paid,Bundled,Attendee with bundled Opportunity (has Parent_Opportunity__c),"1. Select 'Cancellation'
+2. Select 'No' for fee
+3. Execute (no settlement screen for bundled)","- Attendee status = 'Cancelled'
+- Opportunity stage = 'Canceled'
+- Parent Opportunity's Revise_Invoice__c = true
+- No settlement screen displayed",,
+TC-C08,Cancellation,Cancel bundled registration - With fee,Not Paid,Bundled,Attendee with bundled Opportunity,"1. Select 'Cancellation'
+2. Select 'Yes' for fee, enter amount
+3. Execute","- Cancellation Fee OLI created
+- Cancellation Credit OLI created
+- Parent Opportunity flagged for invoice revision",,
+TC-C09,Cancellation,Verify warning banner displayed,Any,Any,Any active registration,"1. Select 'Cancellation'
+2. Proceed through steps 1-3","- Warning banner visible on steps 1-3
+- Banner not visible on completion screen",,
+TC-C10,Cancellation,Cancel button returns to start,Any,Any,Any registration,"1. Navigate to step 2 or 3 of cancellation
+2. Click 'Cancel' button","- User returned to Change Type selection (Step 0)
+- All cancellation data reset",,
+TC-T01,Transfer,Transfer to different program - Same price,Not Paid,Standalone,"Attendee registered for Program A, Program B available at same price","1. Select 'Transfer'
+2. Click Next
+3. Search/select target program
+4. Click Next
+5. Review transfer details (no price difference)
+6. Enter comments
+7. Click Next
+8. Execute Transfer","- Original Attendee status = 'Transferred Out'
+- Original Opportunity updated
+- New Opportunity created for target program
+- New Attendee created
+- Success screen with links to new records",,
+TC-T02,Transfer,Transfer to higher-priced program,Not Paid,Standalone,Program B costs more than current Program A,"1. Complete transfer flow to higher-priced program
+2. Review price difference
+3. Execute","- Additional charge OLI created on new Opportunity
+- Price difference displayed correctly in review",,
+TC-T03,Transfer,Transfer to lower-priced program,Not Paid,Standalone,Program B costs less than current Program A,"1. Complete transfer flow to lower-priced program
+2. Execute","- Credit OLI created
+- Appropriate handling of Price difference",,
+TC-T04,Transfer,Transfer paid registration,Paid,Standalone,Attendee with paid registration,"1. Complete transfer flow
+2. Verify payment handling","- Payments transferred/applied to new Opportunity
+- Original Opportunity closed properly",,
+TC-T05,Transfer,Transfer bundled registration,Any,Bundled,Attendee with bundled Opportunity,"1. Complete transfer flow
+2. Execute","- Parent Opportunity's Revise_Invoice__c = true
+- New Opportunity linked appropriately",,
+TC-T06,Transfer,Program search functionality,Any,Any,Multiple programs available,"1. On Select Program step
+2. Enter search term
+3. Verify results filter correctly","- Programs filtered by search term
+- Matching Programs displayed
+- Can select from filtered results",,
+TC-T07,Transfer,Select program from table,Any,Any,Programs displayed in table,"1. Click on a program row in the table
+2. Verify selection","- Selected program highlighted
+- program details shown
+- Next button enabled",,
+TC-T08,Transfer,Transfer with discount applied,Not Paid,Standalone,Original registration has discount,"1. Complete transfer flow
+2. Verify discount handling option
+3. Execute","- Option to apply Original discount to new registration
+- discount transferred if Selected",,
+TC-T09,Transfer,Warning banner on transfer steps,Any,Any,Any registration,1. Navigate through transfer steps 1-3,"- Warning banner visible
+- Message about completing All steps",,
+TC-T10,Transfer,Back navigation through transfer,Any,Any,Any registration,"1. Navigate to step 3
+2. Click Back
+3. Click Back again
+4. Click Back to step 0","- Each back click returns to previous Step
+- Data preserved when going back",,
+TC-S01,Substitution,Substitute with contact from same account,Not Paid,Standalone,Contact exists in same Account with email,"1. Select 'Substitution'
+2. Click Next
+3. Search for contact by name
+4. Select contact from results
+5. Choose discount option
+6. Enter comments
+7. Click Next
+8. Review and Execute","- Original Attendee status = 'Substitution'
+- Original Opportunity = 'Closed Lost'
+- New Opportunity created for substitute
+- New Attendee created for substitute
+- OpportunityContactRole created
+- Success screen with links",,
+TC-S02,Substitution,Substitute with contact from different account,Not Paid,Standalone,Contact in different Account,"1. Search for contact not in current account
+2. Select and complete substitution","- Contact from different account Can be Selected
+- Substitution completes successfully",,
+TC-S03,Substitution,Search by email address,Not Paid,Standalone,Contact with known email,"1. On substitution screen
+2. Enter email address in search
+3. Verify contact found","- Contact found by email search
+- Correct Contact displayed in results",,
+TC-S04,Substitution,Search with partial name,Not Paid,Standalone,Contacts with various names,"1. Enter partial name (e.g., 'John')
+2. Review results","- Multiple Matching contacts displayed
+- results sorted appropriately",,
+TC-S05,Substitution,Apply original discount to substitute,Not Paid,Standalone,Original registration has discount,"1. Complete substitution
+2. Select 'Yes' for Apply Original Discount
+3. Execute","- discount OLI copied to new Opportunity
+- discount amount matches Original",,
+TC-S06,Substitution,Do not apply discount to substitute,Not Paid,Standalone,Original registration has discount,"1. Complete substitution
+2. Select 'No' for Apply Original Discount
+3. Execute","- No discount OLI on new Opportunity
+- program Fee only",,
+TC-S07,Substitution,Substitute paid registration,Paid,Standalone,Paid registration,"1. Complete substitution flow
+2. Execute","- payment records moved to new Opportunity
+- invoice updated if applicable",,
+TC-S08,Substitution,Substitute bundled registration,Any,Bundled,Bundled Opportunity,"1. Complete substitution flow
+2. Execute","- Parent Opportunity's Revise_Invoice__c = true
+- No direct payment transfer",,
+TC-S09,Substitution,Clear selected contact,Any,Any,Contact selected,"1. Select a contact
+2. Click X or clear button
+3. Search for different contact","- Selected Contact cleared
+- Can search and select new Contact",,
+TC-S10,Substitution,Minimum search characters,Any,Any,Any registration,"1. Type single character in search
+2. Verify no search triggered
+3. Type second character","- No results with 1 character
+- Search triggers at 2+ characters",,
+TC-S11,Substitution,Contact without email shown,Any,Any,Contacts with and without email,"1. Search for contacts
+2. Check results display","- Contacts without email show '(No email)'
+- All matching contacts displayed",,
+TC-G01,General,LWC loads correctly from Attendee record,N/A,N/A,Valid Attendee record,"1. Navigate to Attendee record
+2. Launch the LWC action","- LWC loads without errors
+- Original registration details displayed
+- All 3 change type options visible",,
+TC-G02,General,Progress indicator updates correctly,N/A,N/A,Any flow,"1. Navigate through any flow
+2. Observe progress indicator","- Current Step highlighted
+- Completed steps marked
+- Correct labels for Each path",,
+TC-G03,General,Error handling - Invalid record,N/A,N/A,Invalid or deleted Attendee ID,1. Attempt to load LWC with bad record ID,"- Appropriate error Message displayed
+- No unhandled exceptions",,
+TC-G04,General,Cancel from any step returns to start,N/A,N/A,Any flow in progress,"1. Navigate to middle of any flow
+2. Click Cancel button","- returns to Change Type selection
+- Form state reset",,
+TC-G05,General,Modal height and scrolling,N/A,N/A,Registration with lots of data,1. Complete flows with scrollable content,"- Content scrolls within modal
+- Buttons remain accessible",,

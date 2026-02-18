@@ -1,0 +1,239 @@
+/* Transfer Registration LWC Styles */
+
+:host {
+    display: block;
+    min-height: 300px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* ═══════════ TEXT VISIBILITY FIXES ═══════════ */
+
+.warning-banner {
+    background-color: #fef0e5;
+    border: 1px solid #dd7a01;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    color: #8c4b02;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    display: flex;
+    align-items: flex-start;
+}
+
+.warning-banner lightning-icon {
+    flex-shrink: 0;
+    --sds-c-icon-color-foreground-default: #dd7a01;
+}
+
+/* Ensure labels and helper text are always readable regardless of theme */
+
+.field-label {
+    font-size: 0.8125rem;
+    color: #c9c7c5;
+}
+
+.section-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025rem;
+}
+
+.placeholder-text {
+    color: #e0deda;
+    font-size: 0.875rem;
+}
+
+/* Lightning input/textarea labels on dark modal background */
+lightning-input,
+lightning-textarea,
+lightning-combobox,
+lightning-radio-group {
+    --slds-c-input-label-text-color: #ffffff;
+    --sds-c-input-label-text-color: #ffffff;
+    --lwc-colorTextLabel: #ffffff;
+    --slds-c-textarea-label-text-color: #ffffff;
+}
+
+lightning-input .slds-form-element__label,
+lightning-textarea .slds-form-element__label,
+lightning-combobox .slds-form-element__label,
+lightning-radio-group .slds-form-element__label,
+lightning-radio-group .slds-form-element__legend {
+    color: #ffffff !important;
+    font-size: 0.9375rem !important;
+}
+
+/* Ensure textarea label is always white */
+lightning-textarea::part(label),
+lightning-textarea label {
+    color: #ffffff !important;
+}
+
+/* Custom white label for dark backgrounds */
+.custom-label-white {
+    color: #ffffff !important;
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+}
+
+/* ═══════════ PROGRAM TABLE ═══════════ */
+
+.program-table-container {
+    max-height: 280px;
+    border: 1px solid #dddbda;
+    border-radius: 4px;
+}
+
+/* ═══════════ SELECTED PROGRAM BOX ═══════════ */
+
+.selected-program-box {
+    background-color: #eef4ff;
+    border: 1px solid #1b96ff;
+}
+
+/* ═══════════ SECTION HEADERS ═══════════ */
+
+.slds-section__title {
+    background-color: #f3f2f2;
+    border-radius: 4px;
+    padding: 0.25rem 0;
+}
+
+/* ═══════════ COMPACT BOXES ═══════════ */
+
+.slds-box.slds-box_xx-small {
+    padding: 0.5rem 0.75rem;
+}
+
+/* ═══════════ RESULT LINKS ═══════════ */
+
+.result-link {
+    color: #0070d2;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.result-link:hover {
+    text-decoration: underline;
+}
+
+/* ═══════════ REVIEW TABLE ═══════════ */
+
+.slds-table td,
+.slds-table th {
+    padding: 0.4rem 0.75rem;
+}
+
+/* ═══════════ VISUAL PICKER (Change Type) ═══════════ */
+
+.slds-visual-picker_vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.slds-visual-picker_vertical input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slds-visual-picker_vertical label {
+    cursor: pointer;
+    display: block;
+    position: relative;
+}
+
+.slds-visual-picker__figure.slds-visual-picker__text {
+    border: 1px solid #dddbda;
+    border-radius: 0.25rem;
+    padding: 0.75rem 1rem;
+    background: #ffffff;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+    justify-content: flex-start;
+    position: relative;
+}
+
+/* Hide selection triangle by default */
+.slds-visual-picker__figure.slds-visual-picker__text::after {
+    content: none !important;
+    display: none !important;
+}
+
+/* Show blue triangle only for checked items */
+.slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure::after {
+    content: '' !important;
+    display: block !important;
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0 24px 24px 0;
+    border-color: transparent #0070d2 transparent transparent;
+}
+
+/* White checkmark inside the triangle */
+.slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure::before {
+    content: '✓';
+    display: block;
+    position: absolute;
+    top: 1px;
+    right: 3px;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: bold;
+    z-index: 1;
+}
+
+.slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure {
+    border-color: #0070d2;
+    background-color: #eef4ff;
+    box-shadow: 0 0 0 1px #0070d2;
+}
+
+.slds-visual-picker_vertical input[type="radio"]:focus + label .slds-visual-picker__figure {
+    box-shadow: 0 0 3px 1px #0070d2;
+}
+
+.slds-visual-picker__figure .slds-text-heading_small {
+    font-weight: 600;
+}
+
+.slds-visual-picker__figure .slds-text-title {
+    color: #706e6b;
+    font-size: 0.75rem;
+    display: block;
+}
+
+/* ═══════════ PROGRESS INDICATOR ═══════════ */
+
+lightning-progress-indicator {
+    display: block;
+}
+
+/* ═══════════ CONTACT SEARCH RESULTS ═══════════ */
+
+.contact-results-container {
+    max-height: 250px;
+    overflow-y: auto;
+    background-color: #1c2229;
+}
+
+.contact-result-item {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.contact-result-item:hover {
+    background-color: #22282f;
+}
+
+.contact-result-item:last-child {
+    border-bottom: none !important;
+}
