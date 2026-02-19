@@ -762,7 +762,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
                 originalOppId: this.initData.originalOpp.Id,
                 newSpecialEventId: this.selectedProgram.Id,
                 applyTransferFee: this.applyTransferFee,
-                settlementType: this.settlementType || null,
+                transferFeeAmount: this.applyTransferFee ? Number(this.transferFeeAmount) : 0,
                 applyDiscount: this.applyDiscount,
                 discountAmount: this.applyDiscount ? Number(this.discountAmount) : 0,
                 discountCode: this.applyDiscount ? this.discountCode : '',

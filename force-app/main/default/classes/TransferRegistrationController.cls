@@ -47,6 +47,7 @@ public with sharing class TransferRegistrationController {
         @AuraEnabled public Id originalOppId { get; set; }
         @AuraEnabled public Id newSpecialEventId { get; set; }
         @AuraEnabled public Boolean applyTransferFee { get; set; }
+        @AuraEnabled public Decimal transferFeeAmount { get; set; }     // Custom transfer fee amount
         @AuraEnabled public String settlementType { get; set; }         // 'Refund' or 'Unapplied Funds'
         @AuraEnabled public Boolean applyDiscount { get; set; }
         @AuraEnabled public Decimal discountAmount { get; set; }
@@ -218,6 +219,7 @@ public with sharing class TransferRegistrationController {
             SELECT Id, Name, evt__Start__c, evt__End__c,
                    Program_Code__c, Program_Acronym__c, Program__c,
                    Expected_Program_Fee__c, EE_Program__c,
+                   Open_Online_Program_Price__c,
                    evt__Status__c, Custom_Program__c,
                    Multi_Module_Program__c
             FROM evt__Special_Event__c
@@ -225,7 +227,11 @@ public with sharing class TransferRegistrationController {
             LIMIT 1
         ];
 
-        details.expectedProgramFee = details.program.Expected_Program_Fee__c;
+        // Use Open_Online_Program_Price__c as the primary fee (matches original flow)
+        // Fall back to Expected_Program_Fee__c if not set
+        details.expectedProgramFee = details.program.Open_Online_Program_Price__c != null
+            ? details.program.Open_Online_Program_Price__c
+            : details.program.Expected_Program_Fee__c;
 
         if (pricebook2Id != null && details.program.EE_Program__c != null) {
             List<PricebookEntry> programFeePBEs = [
@@ -352,6 +358,15 @@ public with sharing class TransferRegistrationController {
                   AND Reverse_Product_Line_Item__c = false
             ];
 
+            // ── QUERY 4b: Original Discount OLIs ─────────────────────
+            List<OpportunityLineItem> originalDiscountOLIs = [
+                SELECT Id, PricebookEntryId, Product2Id, Product2.Name,
+                       UnitPrice, Quantity, TotalPrice, Discount_Code__c
+                FROM OpportunityLineItem
+                WHERE OpportunityId = :originalOpp.Id
+                  AND Product_Family__c = 'Discount'
+            ];
+
             // ── QUERY 5: ALL PricebookEntries upfront ──────────────
             // Single query replaces 3-4 separate PBE queries
             Map<String, PricebookEntry> pbeByKey = new Map<String, PricebookEntry>();
@@ -417,7 +432,10 @@ public with sharing class TransferRegistrationController {
                 transferFeeOLI.OpportunityId = originalOpp.Id;
                 transferFeeOLI.PricebookEntryId = transferFeePBE.Id;
                 transferFeeOLI.Quantity = 1;
-                transferFeeOLI.UnitPrice = transferFeePBE.UnitPrice;
+                // Use custom amount if provided, otherwise fall back to PBE price
+                transferFeeOLI.UnitPrice = (request.transferFeeAmount != null && request.transferFeeAmount > 0)
+                    ? request.transferFeeAmount
+                    : transferFeePBE.UnitPrice;
                 transferFeeOLI.Internal_Comments__c = 'Transfer fee applied';
                 olisToInsert.add(transferFeeOLI);
             }
@@ -465,14 +483,19 @@ public with sharing class TransferRegistrationController {
             newOpp.Reg_Change_Comments__c = request.regChangeComments;
             newOpp.Reg_Change_Processed_By__c = UserInfo.getUserId();
 
+            // Naming convention: "{ProgramAcronym} Registration - {FirstName} {LastName}"
+            // Matches original Transfer_Subflow
             String oppName = '';
+            if (newProgram.Program_Acronym__c != null) {
+                oppName = newProgram.Program_Acronym__c + ' Registration - ';
+            }
+            if (attendee.evt__First_Name__c != null) {
+                oppName += attendee.evt__First_Name__c + ' ';
+            }
             if (attendee.evt__Last_Name__c != null) {
                 oppName += attendee.evt__Last_Name__c;
             }
-            if (newProgram.Program_Acronym__c != null) {
-                oppName += ' - ' + newProgram.Program_Acronym__c;
-            }
-            newOpp.Name = oppName;
+            newOpp.Name = oppName.trim();
 
             if (originalOpp.Parent_Opportunity__c != null) {
                 newOpp.Parent_Opportunity__c = originalOpp.Parent_Opportunity__c;
@@ -517,14 +540,40 @@ public with sharing class TransferRegistrationController {
             }
 
             // 8. Apply Discount to new Opp (if applicable)
-            if (request.applyDiscount && request.discountAmount != null
-                    && request.discountAmount != 0 && pbeByKey.containsKey('Discount')) {
-                OpportunityLineItem discountOLI = new OpportunityLineItem();
-                discountOLI.OpportunityId = newOpp.Id;
-                discountOLI.PricebookEntryId = pbeByKey.get('Discount').Id;
-                discountOLI.Quantity = 1;
-                discountOLI.UnitPrice = -Math.abs(request.discountAmount);
-                newOppOLIs.add(discountOLI);
+            // Copy original discount OLIs to new opportunity
+            if (request.applyDiscount && !originalDiscountOLIs.isEmpty()) {
+                // Calculate discount: same EE program = same amount, otherwise recalculate
+                Boolean sameProgramEE = originalOpp.EE_Program__c != null
+                    && newProgram.EE_Program__c != null
+                    && originalOpp.EE_Program__c == newProgram.EE_Program__c;
+
+                for (OpportunityLineItem origDiscount : originalDiscountOLIs) {
+                    OpportunityLineItem discountOLI = new OpportunityLineItem();
+                    discountOLI.OpportunityId = newOpp.Id;
+                    discountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
+                    discountOLI.Quantity = 1;
+
+                    if (sameProgramEE) {
+                        // Same program - use original discount amount
+                        discountOLI.UnitPrice = origDiscount.UnitPrice;
+                    } else {
+                        // Different program - recalculate based on new program fee
+                        // Calculate discount percentage from original
+                        Decimal originalFeeForCalc = 0;
+                        for (OpportunityLineItem pf : originalProgramFees) {
+                            if (pf.TotalPrice != null) originalFeeForCalc += pf.TotalPrice;
+                        }
+                        if (originalFeeForCalc > 0 && origDiscount.UnitPrice != null) {
+                            Decimal discountPercent = Math.abs(origDiscount.UnitPrice) / originalFeeForCalc;
+                            Decimal newFee = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
+                            discountOLI.UnitPrice = -(newFee * discountPercent);
+                        } else {
+                            discountOLI.UnitPrice = origDiscount.UnitPrice;
+                        }
+                    }
+
+                    newOppOLIs.add(discountOLI);
+                }
             }
 
             // Batch insert new Opp OLIs
@@ -607,8 +656,14 @@ public with sharing class TransferRegistrationController {
                 }
             }
 
-            // 12. Invoice Handling
+            // 12. Invoice Handling - Update Invoice record to point to new Opp
             if (originalOpp.Invoice__c != null) {
+                // Update the Invoice record's Opportunity lookup to the new Opp
+                Invoice__c inv = new Invoice__c(Id = originalOpp.Invoice__c);
+                inv.Opportunity__c = newOpp.Id;
+                update inv;
+
+                // Also set Invoice lookup on new Opp
                 newOpp.Invoice__c = originalOpp.Invoice__c;
                 update newOpp;
             }

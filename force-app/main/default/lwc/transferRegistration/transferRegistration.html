@@ -248,18 +248,11 @@
                         </h3>
                         <div class="slds-section__content slds-p-around_small">
                             <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">New Program Fee Amount</div>
-                            <lightning-input
-                                type="number"
-                                label="New Program Fee Amount"
-                                variant="label-hidden"
-                                value={newProgramFeeAmount}
-                                formatter="currency"
-                                step="0.01"
-                                onchange={handleFeeChange}
-                                class="slds-m-bottom_small">
-                            </lightning-input>
+                            <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_small">
+                                <span style="font-size: 1.125rem; font-weight: 600;">{formattedNewFee}</span>
+                            </div>
                             <div style="color: #c9c7c5; font-size: 0.8125rem;">
-                                Original Fee: {formattedOriginalFee} | Expected Fee for new program: {formattedExpectedFee}
+                                Original Fee: {formattedOriginalFee} | Auto-populated from selected program
                             </div>
                         </div>
                     </div>
@@ -294,38 +287,6 @@
                                     step="0.01"
                                     onchange={handleTransferFeeAmountChange}>
                                 </lightning-input>
-                            </template>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Settlement Type -->
-                <div class="slds-col slds-size_1-of-1 slds-m-bottom_small">
-                    <div class="slds-section slds-is-open">
-                        <h3 class="slds-section__title">
-                            <span class="slds-truncate slds-p-horizontal_small" title="Settlement">Settlement</span>
-                        </h3>
-                        <div class="slds-section__content slds-p-around_small">
-                            <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Settlement Type</div>
-                            <lightning-combobox
-                                name="settlementType"
-                                label="Settlement Type"
-                                variant="label-hidden"
-                                value={settlementType}
-                                placeholder="Select settlement type..."
-                                options={settlementOptions}
-                                onchange={handleSettlementChange}
-                                class="slds-m-bottom_small">
-                            </lightning-combobox>
-                            <template lwc:if={showSettlementInfo}>
-                                <div class="slds-box slds-box_xx-small slds-theme_default slds-m-top_small">
-                                    <div class="slds-text-body_small">
-                                        Net Credit Amount: <strong>{formattedNetCredit}</strong>
-                                    </div>
-                                    <div class="field-label slds-m-top_xx-small">
-                                        {settlementDescription}
-                                    </div>
-                                </div>
                             </template>
                         </div>
                     </div>
@@ -453,12 +414,6 @@
                                 <td class="slds-text-align_right">{formattedDiscountAmount}</td>
                             </tr>
                         </template>
-                        <template lwc:if={settlementType}>
-                            <tr class="slds-hint-parent">
-                                <td><strong>Settlement ({settlementType})</strong></td>
-                                <td class="slds-text-align_right"><strong>{formattedNetCredit}</strong></td>
-                            </tr>
-                        </template>
                     </tbody>
                 </table>
 
@@ -479,9 +434,6 @@
                         <li>Create new Opportunity with "Registered" stage</li>
                         <li>Create new Attendee record linked to new program</li>
                         <li>Move existing payments to new Opportunity</li>
-                        <template lwc:if={settlementType}>
-                            <li>Create {settlementType} record for net credit</li>
-                        </template>
                         <template lwc:if={applyDiscount}><li>Apply discount to new Opportunity</li></template>
                     </ul>
                 </div>
