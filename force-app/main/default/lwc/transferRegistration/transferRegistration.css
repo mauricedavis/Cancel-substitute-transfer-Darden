@@ -129,46 +129,49 @@ lightning-textarea label {
 
 /* ═══════════ VISUAL PICKER (Change Type) ═══════════ */
 
-.slds-visual-picker_vertical {
-    display: flex;
-    flex-direction: row;
-    gap: 1.25rem;
-    width: 100%;
+.slds-visual-picker.slds-visual-picker_vertical {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 1rem !important;
+    width: 100% !important;
 }
 
-.slds-visual-picker_vertical label {
-    flex: 1;
-    min-width: 0;
+.slds-visual-picker.slds-visual-picker_vertical input[type="radio"] {
+    position: absolute !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
 }
 
-.slds-visual-picker_vertical input[type="radio"] {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.slds-visual-picker_vertical > label {
-    cursor: pointer;
-    display: block;
-    position: relative;
-    flex: 1;
-    min-width: 0;
+.slds-visual-picker.slds-visual-picker_vertical label {
+    cursor: pointer !important;
+    display: block !important;
+    position: relative !important;
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    max-width: 33.33% !important;
 }
 
 .slds-visual-picker__figure.slds-visual-picker__text {
     border: 1px solid #dddbda !important;
-    border-radius: 0.25rem;
-    padding: 1rem;
+    border-radius: 0.25rem !important;
+    padding: 1rem !important;
     background: #ffffff !important;
     transition: border-color 0.15s ease, background-color 0.15s ease;
-    justify-content: flex-start;
-    position: relative;
+    justify-content: flex-start !important;
+    position: relative !important;
     box-shadow: none !important;
-    height: 100%;
-    min-height: 100px;
-    display: flex;
-    align-items: center;
+    height: 100% !important;
+    min-height: 100px !important;
+    display: flex !important;
+    align-items: flex-start !important;
+}
+
+.slds-visual-picker__figure.slds-visual-picker__text > span {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
 }
 
 /* Hide selection triangle by default */
@@ -219,13 +222,14 @@ lightning-textarea label {
 }
 
 .slds-visual-picker__figure .slds-text-title {
-    color: #706e6b;
-    font-size: 0.75rem;
-    display: block;
-    white-space: normal;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    line-height: 1.4;
+    color: #706e6b !important;
+    font-size: 0.75rem !important;
+    display: block !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    line-height: 1.4 !important;
+    max-width: 100% !important;
 }
 
 /* ═══════════ PROGRESS INDICATOR ═══════════ */
