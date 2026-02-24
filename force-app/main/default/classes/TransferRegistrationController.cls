@@ -321,7 +321,9 @@ public with sharing class TransferRegistrationController {
                        Billing_Contact__c, Invoice__c,
                        Reg_Change_Comments__c, Reg_Change_Date__c,
                        Discount_Amount__c, Number_of_Discounts__c,
-                       Parent_Opportunity__c,
+                       Parent_Opportunity__c, Primary_Contact__c,
+                       Payment_Status__c, Total_Paid__c, Is_Payment_Opportunity__c,
+                       Has_Parent_Opportunity__c,
                        How_they_heard_about_program__c,
                        How_they_heard_about_program_Other__c
                 FROM Opportunity
@@ -465,6 +467,7 @@ public with sharing class TransferRegistrationController {
             Opportunity newOpp = new Opportunity();
             newOpp.AccountId = originalOpp.AccountId;
             newOpp.ContactId = originalOpp.ContactId;
+            newOpp.Primary_Contact__c = originalOpp.Primary_Contact__c;
             newOpp.OwnerId = originalOpp.OwnerId;
             newOpp.RecordTypeId = originalOpp.RecordTypeId;
             newOpp.Pricebook2Id = originalOpp.Pricebook2Id;
@@ -508,10 +511,13 @@ public with sharing class TransferRegistrationController {
             update originalOpp;
 
             // 6. Create OpportunityContactRole
-            if (originalOpp.ContactId != null) {
+            Id primaryContactId = originalOpp.Primary_Contact__c != null 
+                ? originalOpp.Primary_Contact__c 
+                : originalOpp.ContactId;
+            if (primaryContactId != null) {
                 OpportunityContactRole ocr = new OpportunityContactRole();
                 ocr.OpportunityId = newOpp.Id;
-                ocr.ContactId = originalOpp.ContactId;
+                ocr.ContactId = primaryContactId;
                 ocr.IsPrimary = true;
                 ocr.Role = 'Decision Maker';
                 insert ocr;
@@ -623,12 +629,48 @@ public with sharing class TransferRegistrationController {
             newOpp.Attendee__c = newAttendee.Id;
             update newOpp;
 
-            // 10. Payment Handling — using pre-queried allPayments
-            List<pymt__PaymentX__c> paymentsToUpdate = new List<pymt__PaymentX__c>();
-            for (pymt__PaymentX__c pmt : allPayments) {
-                pmt.pymt__Opportunity__c = newOpp.Id;
-                paymentsToUpdate.add(pmt);
+            // 10. Payment Handling — based on payment status and standalone/parent logic
+            // Calculate the new opportunity total amount
+            Decimal newOppTotal = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
+            if (request.applyDiscount && request.discountAmount != null) {
+                newOppTotal -= request.discountAmount;
             }
+            
+            String paymentStatus = originalOpp.Payment_Status__c;
+            Boolean isStandalone = originalOpp.Has_Parent_Opportunity__c != 'Yes';
+            Boolean hasPaidPayments = originalOpp.Total_Paid__c != null && originalOpp.Total_Paid__c > 0;
+            
+            List<pymt__PaymentX__c> paymentsToUpdate = new List<pymt__PaymentX__c>();
+            
+            // Separate payments by status
+            List<pymt__PaymentX__c> paidPayments = new List<pymt__PaymentX__c>();
+            List<pymt__PaymentX__c> unpaidPayments = new List<pymt__PaymentX__c>();
+            
+            for (pymt__PaymentX__c pmt : allPayments) {
+                if (pmt.pymt__Status__c == 'Completed') {
+                    paidPayments.add(pmt);
+                } else {
+                    unpaidPayments.add(pmt);
+                }
+            }
+            
+            // Move PAID payments to new opp (if standalone and has paid amount)
+            if (isStandalone && hasPaidPayments && !paidPayments.isEmpty()) {
+                for (pymt__PaymentX__c pmt : paidPayments) {
+                    pmt.pymt__Opportunity__c = newOpp.Id;
+                    paymentsToUpdate.add(pmt);
+                }
+            }
+            
+            // Update UNPAID/PENDING payments - move to new opp AND update amount
+            if (isStandalone && !unpaidPayments.isEmpty()) {
+                for (pymt__PaymentX__c pmt : unpaidPayments) {
+                    pmt.pymt__Opportunity__c = newOpp.Id;
+                    pmt.pymt__Amount__c = newOppTotal;
+                    paymentsToUpdate.add(pmt);
+                }
+            }
+            
             if (!paymentsToUpdate.isEmpty()) {
                 update paymentsToUpdate;
             }
