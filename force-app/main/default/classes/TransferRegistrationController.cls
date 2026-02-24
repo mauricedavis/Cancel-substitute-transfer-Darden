@@ -540,38 +540,46 @@ public with sharing class TransferRegistrationController {
             }
 
             // 8. Apply Discount to new Opp (if applicable)
-            // Copy original discount OLIs to new opportunity
-            if (request.applyDiscount && !originalDiscountOLIs.isEmpty()) {
-                // Calculate discount: same EE program = same amount, otherwise recalculate
-                Boolean sameProgramEE = originalOpp.EE_Program__c != null
-                    && newProgram.EE_Program__c != null
-                    && originalOpp.EE_Program__c == newProgram.EE_Program__c;
+            if (request.applyDiscount) {
+                if (!originalDiscountOLIs.isEmpty()) {
+                    // Copy original discount OLIs to new opportunity
+                    Boolean sameProgramEE = originalOpp.EE_Program__c != null
+                        && newProgram.EE_Program__c != null
+                        && originalOpp.EE_Program__c == newProgram.EE_Program__c;
 
-                for (OpportunityLineItem origDiscount : originalDiscountOLIs) {
+                    for (OpportunityLineItem origDiscount : originalDiscountOLIs) {
+                        OpportunityLineItem discountOLI = new OpportunityLineItem();
+                        discountOLI.OpportunityId = newOpp.Id;
+                        discountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
+                        discountOLI.Quantity = 1;
+
+                        if (sameProgramEE) {
+                            // Same program - use original discount amount
+                            discountOLI.UnitPrice = origDiscount.UnitPrice;
+                        } else {
+                            // Different program - recalculate based on new program fee
+                            Decimal originalFeeForCalc = 0;
+                            for (OpportunityLineItem pf : originalProgramFees) {
+                                if (pf.TotalPrice != null) originalFeeForCalc += pf.TotalPrice;
+                            }
+                            if (originalFeeForCalc > 0 && origDiscount.UnitPrice != null) {
+                                Decimal discountPercent = Math.abs(origDiscount.UnitPrice) / originalFeeForCalc;
+                                Decimal newFee = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
+                                discountOLI.UnitPrice = -(newFee * discountPercent);
+                            } else {
+                                discountOLI.UnitPrice = origDiscount.UnitPrice;
+                            }
+                        }
+
+                        newOppOLIs.add(discountOLI);
+                    }
+                } else if (request.discountAmount != null && request.discountAmount > 0 && pbeByKey.containsKey('Discount')) {
+                    // No original discounts, but user entered a custom discount amount
                     OpportunityLineItem discountOLI = new OpportunityLineItem();
                     discountOLI.OpportunityId = newOpp.Id;
-                    discountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
+                    discountOLI.PricebookEntryId = pbeByKey.get('Discount').Id;
                     discountOLI.Quantity = 1;
-
-                    if (sameProgramEE) {
-                        // Same program - use original discount amount
-                        discountOLI.UnitPrice = origDiscount.UnitPrice;
-                    } else {
-                        // Different program - recalculate based on new program fee
-                        // Calculate discount percentage from original
-                        Decimal originalFeeForCalc = 0;
-                        for (OpportunityLineItem pf : originalProgramFees) {
-                            if (pf.TotalPrice != null) originalFeeForCalc += pf.TotalPrice;
-                        }
-                        if (originalFeeForCalc > 0 && origDiscount.UnitPrice != null) {
-                            Decimal discountPercent = Math.abs(origDiscount.UnitPrice) / originalFeeForCalc;
-                            Decimal newFee = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
-                            discountOLI.UnitPrice = -(newFee * discountPercent);
-                        } else {
-                            discountOLI.UnitPrice = origDiscount.UnitPrice;
-                        }
-                    }
-
+                    discountOLI.UnitPrice = -Math.abs(request.discountAmount);
                     newOppOLIs.add(discountOLI);
                 }
             }
