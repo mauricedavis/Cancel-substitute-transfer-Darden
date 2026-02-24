@@ -335,7 +335,7 @@ public with sharing class TransferRegistrationController {
             }
             Opportunity originalOpp = oppList[0];
 
-            // ── QUERY 3: New Program ───────────────────────────────
+            // ── QUERY 3: New Program (Special Event) ─────────────────
             List<evt__Special_Event__c> programList = [
                 SELECT Id, Name, evt__Start__c, evt__End__c,
                        Program_Code__c, Program_Acronym__c, Program__c,
@@ -349,6 +349,20 @@ public with sharing class TransferRegistrationController {
                 throw new AuraHandledException('Target program not found for ID: ' + request.newSpecialEventId);
             }
             evt__Special_Event__c newProgram = programList[0];
+            
+            // ── QUERY 3b: New EE Program to get Product__c ───────────
+            Id newProgramProductId = null;
+            if (newProgram.EE_Program__c != null) {
+                List<EE_Program__c> eeProgList = [
+                    SELECT Id, Product__c
+                    FROM EE_Program__c
+                    WHERE Id = :newProgram.EE_Program__c
+                    LIMIT 1
+                ];
+                if (!eeProgList.isEmpty() && eeProgList[0].Product__c != null) {
+                    newProgramProductId = eeProgList[0].Product__c;
+                }
+            }
 
             // ── QUERY 4: Original Program Fee OLIs ─────────────────
             List<OpportunityLineItem> originalProgramFees = [
@@ -372,6 +386,8 @@ public with sharing class TransferRegistrationController {
             // ── QUERY 5: ALL PricebookEntries upfront ──────────────
             // Single query replaces 3-4 separate PBE queries
             Map<String, PricebookEntry> pbeByKey = new Map<String, PricebookEntry>();
+            PricebookEntry newProgramPBE = null;
+            
             if (originalOpp.Pricebook2Id != null) {
                 List<PricebookEntry> allPBEs = [
                     SELECT Id, Product2Id, Product2.Name, Product2.Family, UnitPrice
@@ -389,6 +405,10 @@ public with sharing class TransferRegistrationController {
                         pbeByKey.put('Discount', pbe);
                     } else if (pbe.Product2.Family == 'Program Fee') {
                         pbeByKey.put('ProgramFee', pbe);
+                        // Check if this is the PBE for the new program's product
+                        if (newProgramProductId != null && pbe.Product2Id == newProgramProductId) {
+                            newProgramPBE = pbe;
+                        }
                     }
                 }
             }
@@ -466,8 +486,12 @@ public with sharing class TransferRegistrationController {
             // 5. Create new Registration Opportunity
             Opportunity newOpp = new Opportunity();
             newOpp.AccountId = originalOpp.AccountId;
-            newOpp.ContactId = originalOpp.ContactId;
-            newOpp.Primary_Contact__c = originalOpp.Primary_Contact__c;
+            // Use Primary_Contact__c if available, otherwise fall back to ContactId
+            Id primaryContact = originalOpp.Primary_Contact__c != null 
+                ? originalOpp.Primary_Contact__c 
+                : originalOpp.ContactId;
+            newOpp.ContactId = primaryContact;
+            newOpp.Primary_Contact__c = primaryContact;
             newOpp.OwnerId = originalOpp.OwnerId;
             newOpp.RecordTypeId = originalOpp.RecordTypeId;
             newOpp.Pricebook2Id = originalOpp.Pricebook2Id;
@@ -529,9 +553,13 @@ public with sharing class TransferRegistrationController {
             if (request.newProgramFeeAmount != null && request.newProgramFeeAmount > 0) {
                 PricebookEntry newProgramFeePBE;
                 if (request.sameProgramTransfer && !originalProgramFees.isEmpty()) {
-                    // Reuse the original PBE — already queried, no extra SOQL
+                    // Same program - reuse the original PBE
                     newProgramFeePBE = new PricebookEntry(Id = originalProgramFees[0].PricebookEntryId);
+                } else if (newProgramPBE != null) {
+                    // Different program - use the PBE matching the new program's Product
+                    newProgramFeePBE = newProgramPBE;
                 } else if (pbeByKey.containsKey('ProgramFee')) {
+                    // Fallback to generic Program Fee PBE
                     newProgramFeePBE = pbeByKey.get('ProgramFee');
                 }
 
@@ -541,6 +569,10 @@ public with sharing class TransferRegistrationController {
                     newProgramFeeOLI.PricebookEntryId = newProgramFeePBE.Id;
                     newProgramFeeOLI.Quantity = 1;
                     newProgramFeeOLI.UnitPrice = request.newProgramFeeAmount;
+                    // Also set Product2Id for correct product association
+                    if (newProgramProductId != null) {
+                        newProgramFeeOLI.Product2Id = newProgramProductId;
+                    }
                     newOppOLIs.add(newProgramFeeOLI);
                 }
             }
@@ -673,6 +705,25 @@ public with sharing class TransferRegistrationController {
             
             if (!paymentsToUpdate.isEmpty()) {
                 update paymentsToUpdate;
+            }
+            
+            // 10b. Create payment record for transfer fee on ORIGINAL opp
+            Decimal actualTransferFee = (request.applyTransferFee && request.transferFeeAmount != null && request.transferFeeAmount > 0)
+                ? request.transferFeeAmount
+                : (request.applyTransferFee && pbeByKey.containsKey('TransferFee') ? pbeByKey.get('TransferFee').UnitPrice : 0);
+            
+            if (request.applyTransferFee && actualTransferFee > 0) {
+                pymt__PaymentX__c transferFeePayment = new pymt__PaymentX__c();
+                transferFeePayment.pymt__Opportunity__c = originalOpp.Id;
+                transferFeePayment.pymt__Amount__c = actualTransferFee;
+                transferFeePayment.pymt__Status__c = 'Scheduled';
+                transferFeePayment.pymt__Date__c = Date.today();
+                transferFeePayment.pymt__Memo__c = 'Transfer fee for transfer to ' + newOpp.Name;
+                transferFeePayment.pymt__Contact__c = originalOpp.Primary_Contact__c != null 
+                    ? originalOpp.Primary_Contact__c 
+                    : originalOpp.ContactId;
+                transferFeePayment.pymt__Account__c = originalOpp.AccountId;
+                insert transferFeePayment;
             }
 
             // 11. Settlement Handling
