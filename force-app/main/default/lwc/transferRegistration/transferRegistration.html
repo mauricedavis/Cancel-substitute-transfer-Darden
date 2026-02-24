@@ -60,39 +60,37 @@
                         <abbr class="slds-required" title="required">*</abbr> Change Type
                     </legend>
                     <div class="slds-form-element__control">
-                        <div class="slds-visual-picker slds-visual-picker_vertical">
-                            <input type="radio" id="change-cancel" value="Cancellation" name="changeType"
-                                checked={isCancellationSelected} onchange={handleChangeTypeSelect} />
-                            <label for="change-cancel">
-                                <span class="slds-visual-picker__figure slds-visual-picker__text slds-align_absolute-center">
-                                    <span>
-                                        <span class="slds-text-heading_small">Cancellation</span>
-                                        <span class="slds-text-title slds-m-top_xx-small">Cancel the current registration and process refund/credit</span>
-                                    </span>
-                                </span>
-                            </label>
-
-                            <input type="radio" id="change-substitution" value="Substitution" name="changeType"
-                                checked={isSubstitutionSelected} onchange={handleChangeTypeSelect} />
-                            <label for="change-substitution">
-                                <span class="slds-visual-picker__figure slds-visual-picker__text slds-align_absolute-center">
-                                    <span>
-                                        <span class="slds-text-heading_small">Substitution</span>
-                                        <span class="slds-text-title slds-m-top_xx-small">Replace the registrant with a different person for the same program</span>
-                                    </span>
-                                </span>
-                            </label>
-
-                            <input type="radio" id="change-transfer" value="Transfer" name="changeType"
-                                checked={isTransferSelected} onchange={handleChangeTypeSelect} />
-                            <label for="change-transfer">
-                                <span class="slds-visual-picker__figure slds-visual-picker__text slds-align_absolute-center">
-                                    <span>
-                                        <span class="slds-text-heading_small">Transfer</span>
-                                        <span class="slds-text-title slds-m-top_xx-small">Transfer the registrant to a different program</span>
-                                    </span>
-                                </span>
-                            </label>
+                        <div class="slds-grid slds-gutters_medium">
+                            <div class="slds-col slds-size_1-of-3">
+                                <div class="change-type-card" onclick={handleCancellationClick} data-selected={isCancellationSelected}>
+                                    <input type="radio" id="change-cancel" value="Cancellation" name="changeType"
+                                        checked={isCancellationSelected} onchange={handleChangeTypeSelect} style="display:none;" />
+                                    <div class="change-type-content">
+                                        <span class="change-type-title">Cancellation</span>
+                                        <span class="change-type-desc">Cancel the current registration and process refund/credit</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-3">
+                                <div class="change-type-card" onclick={handleSubstitutionClick} data-selected={isSubstitutionSelected}>
+                                    <input type="radio" id="change-substitution" value="Substitution" name="changeType"
+                                        checked={isSubstitutionSelected} onchange={handleChangeTypeSelect} style="display:none;" />
+                                    <div class="change-type-content">
+                                        <span class="change-type-title">Substitution</span>
+                                        <span class="change-type-desc">Replace the registrant with a different person for the same program</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="slds-col slds-size_1-of-3">
+                                <div class="change-type-card" onclick={handleTransferClick} data-selected={isTransferSelected}>
+                                    <input type="radio" id="change-transfer" value="Transfer" name="changeType"
+                                        checked={isTransferSelected} onchange={handleChangeTypeSelect} style="display:none;" />
+                                    <div class="change-type-content">
+                                        <span class="change-type-title">Transfer</span>
+                                        <span class="change-type-desc">Transfer the registrant to a different program</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </fieldset>

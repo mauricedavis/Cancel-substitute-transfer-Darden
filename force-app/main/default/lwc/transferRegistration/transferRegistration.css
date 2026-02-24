@@ -127,63 +127,33 @@ lightning-textarea label {
     padding: 0.4rem 0.75rem;
 }
 
-/* ═══════════ VISUAL PICKER (Change Type) ═══════════ */
+/* ═══════════ CHANGE TYPE CARDS ═══════════ */
 
-.slds-visual-picker.slds-visual-picker_vertical {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    gap: 1rem !important;
-    width: 100% !important;
+.change-type-card {
+    border: 1px solid #dddbda;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    background: #ffffff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+    min-height: 100px;
+    height: 100%;
 }
 
-.slds-visual-picker.slds-visual-picker_vertical input[type="radio"] {
-    position: absolute !important;
-    opacity: 0 !important;
-    width: 0 !important;
-    height: 0 !important;
+.change-type-card:hover {
+    border-color: #0070d2;
+    background-color: #f7fbff;
 }
 
-.slds-visual-picker.slds-visual-picker_vertical label {
-    cursor: pointer !important;
-    display: block !important;
-    position: relative !important;
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-    max-width: 33.33% !important;
+.change-type-card[data-selected="true"] {
+    border-color: #0070d2;
+    background-color: #eef4ff;
+    box-shadow: 0 0 0 1px #0070d2;
 }
 
-.slds-visual-picker__figure.slds-visual-picker__text {
-    border: 1px solid #dddbda !important;
-    border-radius: 0.25rem !important;
-    padding: 1rem !important;
-    background: #ffffff !important;
-    transition: border-color 0.15s ease, background-color 0.15s ease;
-    justify-content: flex-start !important;
-    position: relative !important;
-    box-shadow: none !important;
-    height: 100% !important;
-    min-height: 100px !important;
-    display: flex !important;
-    align-items: flex-start !important;
-}
-
-.slds-visual-picker__figure.slds-visual-picker__text > span {
-    white-space: normal !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-}
-
-/* Hide selection triangle by default */
-.slds-visual-picker__figure.slds-visual-picker__text::after {
-    content: none !important;
-    display: none !important;
-}
-
-/* Show blue triangle only for checked items */
-.slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure::after {
-    content: '' !important;
-    display: block !important;
+.change-type-card[data-selected="true"]::after {
+    content: '';
     position: absolute;
     top: 0;
     right: 0;
@@ -194,10 +164,8 @@ lightning-textarea label {
     border-color: transparent #0070d2 transparent transparent;
 }
 
-/* White checkmark inside the triangle */
-.slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure::before {
+.change-type-card[data-selected="true"]::before {
     content: '✓';
-    display: block;
     position: absolute;
     top: 1px;
     right: 3px;
@@ -207,29 +175,24 @@ lightning-textarea label {
     z-index: 1;
 }
 
-.slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure {
-    border-color: #0070d2 !important;
-    background-color: #eef4ff !important;
-    box-shadow: 0 0 0 1px #0070d2 !important;
+.change-type-content {
+    display: flex;
+    flex-direction: column;
 }
 
-.slds-visual-picker_vertical input[type="radio"]:focus + label .slds-visual-picker__figure {
-    box-shadow: 0 0 3px 1px #0070d2;
-}
-
-.slds-visual-picker__figure .slds-text-heading_small {
+.change-type-title {
+    font-size: 1rem;
     font-weight: 600;
+    color: #080707;
+    margin-bottom: 0.5rem;
 }
 
-.slds-visual-picker__figure .slds-text-title {
-    color: #706e6b !important;
-    font-size: 0.75rem !important;
-    display: block !important;
-    white-space: normal !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-    line-height: 1.4 !important;
-    max-width: 100% !important;
+.change-type-desc {
+    font-size: 0.75rem;
+    color: #706e6b;
+    line-height: 1.4;
+    white-space: normal;
+    word-wrap: break-word;
 }
 
 /* ═══════════ PROGRESS INDICATOR ═══════════ */

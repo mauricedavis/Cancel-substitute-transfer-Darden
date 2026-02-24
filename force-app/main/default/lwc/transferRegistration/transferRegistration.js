@@ -146,6 +146,18 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         this.changeType = event.target.value;
     }
 
+    handleCancellationClick() {
+        this.changeType = 'Cancellation';
+    }
+
+    handleSubstitutionClick() {
+        this.changeType = 'Substitution';
+    }
+
+    handleTransferClick() {
+        this.changeType = 'Transfer';
+    }
+
     // ═══════════════ STEP COMPUTED PROPERTIES ═══════════════
 
     get isTransferStep1() { return this.isTransferPath && this.currentStep === '1'; }
