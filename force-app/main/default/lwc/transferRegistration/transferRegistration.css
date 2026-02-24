@@ -132,7 +132,7 @@ lightning-textarea label {
 .slds-visual-picker_vertical {
     display: flex;
     flex-direction: row;
-    gap: 0.75rem;
+    gap: 1.25rem;
     width: 100%;
 }
 
@@ -222,6 +222,10 @@ lightning-textarea label {
     color: #706e6b;
     font-size: 0.75rem;
     display: block;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.4;
 }
 
 /* ═══════════ PROGRESS INDICATOR ═══════════ */
