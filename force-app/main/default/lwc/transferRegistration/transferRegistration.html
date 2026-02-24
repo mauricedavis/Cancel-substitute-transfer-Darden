@@ -16,6 +16,9 @@
     <!-- ═══════════════ MAIN CONTENT ═══════════════ -->
     <template lwc:if={isReady}>
 
+        <!-- TITLE -->
+        <div class="slds-text-heading_medium slds-m-bottom_small">Cancellations, Transfers and Substitution</div>
+
         <!-- PROGRESS INDICATOR -->
         <lightning-progress-indicator current-step={currentStep} type="path" variant="base" class="slds-m-bottom_medium">
             <lightning-progress-step label="Change Type" value="0"></lightning-progress-step>
@@ -51,7 +54,7 @@
         <!-- ═══════════ STEP 0: CHANGE TYPE SELECTION ═══════════ -->
         <template lwc:if={isStep0}>
             <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
-                <div class="slds-text-heading_small slds-m-bottom_small">Cancellations, Transfers and Substitution</div>
+                <!-- Title moved to top of component -->
                 <fieldset class="slds-form-element">
                     <legend class="slds-form-element__legend slds-form-element__label">
                         <abbr class="slds-required" title="required">*</abbr> Change Type

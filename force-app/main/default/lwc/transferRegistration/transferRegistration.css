@@ -149,13 +149,14 @@ lightning-textarea label {
 }
 
 .slds-visual-picker__figure.slds-visual-picker__text {
-    border: 1px solid #dddbda;
+    border: 1px solid #dddbda !important;
     border-radius: 0.25rem;
     padding: 0.75rem 1rem;
-    background: #ffffff;
+    background: #ffffff !important;
     transition: border-color 0.15s ease, background-color 0.15s ease;
     justify-content: flex-start;
     position: relative;
+    box-shadow: none !important;
 }
 
 /* Hide selection triangle by default */
@@ -192,9 +193,9 @@ lightning-textarea label {
 }
 
 .slds-visual-picker_vertical input[type="radio"]:checked + label .slds-visual-picker__figure {
-    border-color: #0070d2;
-    background-color: #eef4ff;
-    box-shadow: 0 0 0 1px #0070d2;
+    border-color: #0070d2 !important;
+    background-color: #eef4ff !important;
+    box-shadow: 0 0 0 1px #0070d2 !important;
 }
 
 .slds-visual-picker_vertical input[type="radio"]:focus + label .slds-visual-picker__figure {
