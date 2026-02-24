@@ -706,16 +706,16 @@ public with sharing class TransferRegistrationController {
                 }
             }
 
-            // 12. Invoice Handling - Update Invoice record to point to new Opp
+            // 12. Invoice Handling - Trigger creation of NEW invoice for new Opp
+            // Don't move the existing invoice - the new opp needs its own invoice number
             if (originalOpp.Invoice__c != null) {
-                // Update the Invoice record's Opportunity lookup to the new Opp
-                Invoice__c inv = new Invoice__c(Id = originalOpp.Invoice__c);
-                inv.Opportunity__c = newOpp.Id;
-                update inv;
-
-                // Also set Invoice lookup on new Opp
-                newOpp.Invoice__c = originalOpp.Invoice__c;
+                // Set flags to trigger creation of a new invoice for the new opportunity
+                newOpp.Set_Create_Invoice__c = true;
                 update newOpp;
+                
+                // Mark original opp to revise its invoice (to reflect the transfer out)
+                originalOpp.Revise_Invoice__c = true;
+                update originalOpp;
             }
 
             // Build result
