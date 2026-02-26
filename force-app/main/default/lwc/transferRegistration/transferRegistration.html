@@ -312,9 +312,10 @@
                                 class="slds-m-bottom_small">
                             </lightning-input>
                             <template lwc:if={applyDiscount}>
+                                <div style="color: #b0b0b0; font-size: 0.75rem; margin-bottom: 0.5rem;">Enter either a discount amount or a discount code from Products.</div>
                                 <div class="slds-grid slds-gutters_small">
                                     <div class="slds-col slds-size_1-of-2">
-                                        <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Discount Amount</div>
+                                        <div style="color: #ffffff; font-size: 0.875rem;" class="slds-m-bottom_xx-small">Discount Amount ($)</div>
                                         <lightning-input
                                             type="number"
                                             label="Discount Amount"

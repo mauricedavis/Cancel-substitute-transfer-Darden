@@ -387,11 +387,12 @@ public with sharing class TransferRegistrationController {
             // ── QUERY 5: ALL PricebookEntries upfront ──────────────
             // Single query replaces 3-4 separate PBE queries
             Map<String, PricebookEntry> pbeByKey = new Map<String, PricebookEntry>();
+            Map<String, PricebookEntry> pbeByDiscountCode = new Map<String, PricebookEntry>();
             PricebookEntry newProgramPBE = null;
             
             if (originalOpp.Pricebook2Id != null) {
                 List<PricebookEntry> allPBEs = [
-                    SELECT Id, Product2Id, Product2.Name, Product2.Family, UnitPrice
+                    SELECT Id, Product2Id, Product2.Name, Product2.Family, Product2.ProductCode, UnitPrice
                     FROM PricebookEntry
                     WHERE Pricebook2Id = :originalOpp.Pricebook2Id
                       AND IsActive = true
@@ -400,11 +401,18 @@ public with sharing class TransferRegistrationController {
                            OR Product2.Family = 'Discounts'
                            OR Product2.Name = 'Transfer Fee')
                 ];
+                Map<String, PricebookEntry> pbeByDiscountCode = new Map<String, PricebookEntry>();
                 for (PricebookEntry pbe : allPBEs) {
                     if (pbe.Product2.Name == 'Transfer Fee') {
                         pbeByKey.put('TransferFee', pbe);
                     } else if (pbe.Product2.Family == 'Discount' || pbe.Product2.Family == 'Discounts') {
                         pbeByKey.put('Discount', pbe);
+                        if (pbe.Product2.ProductCode != null) {
+                            pbeByDiscountCode.put(pbe.Product2.ProductCode.toUpperCase().trim(), pbe);
+                        }
+                        if (pbe.Product2.Name != null) {
+                            pbeByDiscountCode.put(pbe.Product2.Name.toUpperCase().trim(), pbe);
+                        }
                     } else if (pbe.Product2.Family == 'Program Fee') {
                         pbeByKey.put('ProgramFee', pbe);
                         // Check if this is the PBE for the new program's product
@@ -579,6 +587,7 @@ public with sharing class TransferRegistrationController {
             }
 
             // 8. Apply Discount to new Opp (if applicable)
+            Decimal effectiveDiscountAmount = 0;
             if (request.applyDiscount) {
                 if (!originalDiscountOLIs.isEmpty()) {
                     // Copy original discount OLIs to new opportunity
@@ -615,21 +624,40 @@ public with sharing class TransferRegistrationController {
                             }
                         }
 
+                        effectiveDiscountAmount += (origDiscount.UnitPrice != null ? Math.abs(origDiscount.UnitPrice) : 0);
                         newOppOLIs.add(discountOLI);
                     }
-                } else if (request.discountAmount != null && request.discountAmount > 0 && pbeByKey.containsKey('Discount')) {
-                    // No original discounts, but user entered a custom discount amount
-                    OpportunityLineItem discountOLI = new OpportunityLineItem();
-                    discountOLI.OpportunityId = newOpp.Id;
-                    discountOLI.PricebookEntryId = pbeByKey.get('Discount').Id;
-                    discountOLI.Quantity = 1;
-                    discountOLI.UnitPrice = -Math.abs(request.discountAmount);
-                    discountOLI.Product_Family__c = 'Discounts';
-                    if (String.isNotBlank(request.discountCode)) {
-                        discountOLI.Discount_Code__c = request.discountCode;
-                        discountOLI.Description = request.discountCode;
+                } else {
+                    // No original discounts — use discount amount and/or discount code from Products
+                    PricebookEntry discountPBE = null;
+                    Decimal discountAmt = (request.discountAmount != null && request.discountAmount > 0)
+                        ? -Math.abs(request.discountAmount) : null;
+                    if (String.isNotBlank(request.discountCode) && pbeByDiscountCode.containsKey(request.discountCode.toUpperCase().trim())) {
+                        discountPBE = pbeByDiscountCode.get(request.discountCode.toUpperCase().trim());
+                        if (discountAmt == null && discountPBE.UnitPrice != null && discountPBE.UnitPrice != 0) {
+                            discountAmt = discountPBE.UnitPrice < 0 ? discountPBE.UnitPrice : -discountPBE.UnitPrice;
+                        }
                     }
-                    newOppOLIs.add(discountOLI);
+                    if (discountPBE == null && pbeByKey.containsKey('Discount')) {
+                        discountPBE = pbeByKey.get('Discount');
+                    }
+                    if (discountPBE != null && (discountAmt != null || (discountPBE.UnitPrice != null && discountPBE.UnitPrice != 0))) {
+                        if (discountAmt == null) {
+                            discountAmt = discountPBE.UnitPrice < 0 ? discountPBE.UnitPrice : -Math.abs(discountPBE.UnitPrice);
+                        }
+                        OpportunityLineItem discountOLI = new OpportunityLineItem();
+                        discountOLI.OpportunityId = newOpp.Id;
+                        discountOLI.PricebookEntryId = discountPBE.Id;
+                        discountOLI.Quantity = 1;
+                        discountOLI.UnitPrice = discountAmt;
+                        discountOLI.Product_Family__c = 'Discounts';
+                        if (String.isNotBlank(request.discountCode)) {
+                        discountOLI.Discount_Code__c = request.discountCode.trim();
+                        discountOLI.Description = request.discountCode.trim();
+                        }
+                        effectiveDiscountAmount = Math.abs(discountAmt);
+                        newOppOLIs.add(discountOLI);
+                    }
                 }
             }
 
@@ -676,7 +704,7 @@ public with sharing class TransferRegistrationController {
                 List<Invoice__c> invoices = [
                     SELECT Id, Opportunity__c
                     FROM Invoice__c
-                    WHERE Opportunity__c = :originalOpp.Id
+                    WHERE Id = :originalOpp.Invoice__c
                     LIMIT 1
                 ];
                 if (!invoices.isEmpty()) {
@@ -701,8 +729,10 @@ public with sharing class TransferRegistrationController {
             // 10. Payment Handling — based on payment status and standalone/parent logic
             // Calculate the new opportunity total amount
             Decimal newOppTotal = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
-            if (request.applyDiscount && request.discountAmount != null) {
-                newOppTotal -= request.discountAmount;
+            if (request.applyDiscount) {
+                Decimal discountToApply = effectiveDiscountAmount > 0 ? effectiveDiscountAmount
+                    : (request.discountAmount != null && request.discountAmount > 0 ? request.discountAmount : 0);
+                newOppTotal -= discountToApply;
             }
             
             String paymentStatus = originalOpp.Payment_Status__c;

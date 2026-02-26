@@ -735,9 +735,13 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
             this.showToast('Validation Error', 'Program fee amount cannot be negative.', 'error');
             return false;
         }
-        if (this.applyDiscount && (!this.discountAmount || Number(this.discountAmount) <= 0)) {
-            this.showToast('Validation Error', 'Please enter a valid discount amount.', 'error');
-            return false;
+        if (this.applyDiscount) {
+            const hasAmount = this.discountAmount && Number(this.discountAmount) > 0;
+            const hasCode = this.discountCode && String(this.discountCode).trim().length > 0;
+            if (!hasAmount && !hasCode) {
+                this.showToast('Validation Error', 'Please enter either a discount amount or a discount code.', 'error');
+                return false;
+            }
         }
         return true;
     }
