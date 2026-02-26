@@ -377,7 +377,7 @@ public with sharing class TransferRegistrationController {
             // ── QUERY 4b: Original Discount OLIs ─────────────────────
             List<OpportunityLineItem> originalDiscountOLIs = [
                 SELECT Id, PricebookEntryId, Product2Id, Product2.Name,
-                       UnitPrice, Quantity, TotalPrice, Discount_Code__c
+                       UnitPrice, Quantity, TotalPrice, Discount_Code__c, Description
                 FROM OpportunityLineItem
                 WHERE OpportunityId = :originalOpp.Id
                   AND Product_Family__c = 'Discount'
@@ -589,6 +589,11 @@ public with sharing class TransferRegistrationController {
                         discountOLI.OpportunityId = newOpp.Id;
                         discountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
                         discountOLI.Quantity = 1;
+                        discountOLI.Product_Family__c = 'Discount';
+                        discountOLI.Description = origDiscount.Description;
+                        discountOLI.Discount_Code__c = String.isNotBlank(request.discountCode)
+                            ? request.discountCode
+                            : origDiscount.Discount_Code__c;
 
                         if (sameProgramEE) {
                             // Same program - use original discount amount
@@ -617,6 +622,11 @@ public with sharing class TransferRegistrationController {
                     discountOLI.PricebookEntryId = pbeByKey.get('Discount').Id;
                     discountOLI.Quantity = 1;
                     discountOLI.UnitPrice = -Math.abs(request.discountAmount);
+                    discountOLI.Product_Family__c = 'Discount';
+                    if (String.isNotBlank(request.discountCode)) {
+                        discountOLI.Discount_Code__c = request.discountCode;
+                        discountOLI.Description = request.discountCode;
+                    }
                     newOppOLIs.add(discountOLI);
                 }
             }
@@ -657,10 +667,24 @@ public with sharing class TransferRegistrationController {
 
             insert newAttendee;
 
-            // Update newOpp: Attendee__c + Set_Create_Invoice__c (if invoice exists) — single DML to reduce flow triggers
+            // Update newOpp: Attendee__c + Invoice handling (match Transfer_Subflow)
             newOpp.Attendee__c = newAttendee.Id;
             if (originalOpp.Invoice__c != null) {
+                // Move existing invoice to new opp (matches flow Update_Invoice)
+                List<Invoice__c> invoices = [
+                    SELECT Id, Opportunity__c
+                    FROM Invoice__c
+                    WHERE Opportunity__c = :originalOpp.Id
+                    LIMIT 1
+                ];
+                if (!invoices.isEmpty()) {
+                    invoices[0].Opportunity__c = newOpp.Id;
+                    update invoices;
+                    newOpp.Invoice__c = invoices[0].Id;
+                }
+                newOpp.Invoice_Created__c = Date.today();
                 newOpp.Set_Create_Invoice__c = true;
+                // Do NOT copy Invoice_Auto_Number__c — leave null so org automation assigns new invoice #
             }
             update newOpp;
 
