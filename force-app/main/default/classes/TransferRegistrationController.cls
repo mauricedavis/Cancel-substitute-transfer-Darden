@@ -530,9 +530,8 @@ public with sharing class TransferRegistrationController {
 
             insert newOpp;
 
-            // Back-populate the lookup
+            // Back-populate the lookup (defer update to batch with invoice handling below)
             originalOpp.Reg_Change_New_Opportunity__c = newOpp.Id;
-            update originalOpp;
 
             // 6. Create OpportunityContactRole
             Id primaryContactId = originalOpp.Primary_Contact__c != null 
@@ -658,7 +657,11 @@ public with sharing class TransferRegistrationController {
 
             insert newAttendee;
 
+            // Update newOpp: Attendee__c + Set_Create_Invoice__c (if invoice exists) — single DML to reduce flow triggers
             newOpp.Attendee__c = newAttendee.Id;
+            if (originalOpp.Invoice__c != null) {
+                newOpp.Set_Create_Invoice__c = true;
+            }
             update newOpp;
 
             // 10. Payment Handling — based on payment status and standalone/parent logic
@@ -757,17 +760,12 @@ public with sharing class TransferRegistrationController {
                 }
             }
 
-            // 12. Invoice Handling - Trigger creation of NEW invoice for new Opp
-            // Don't move the existing invoice - the new opp needs its own invoice number
+            // 12. Invoice Handling - Update originalOpp with Reg_Change_New_Opportunity__c + Revise_Invoice__c
+            // Single update to reduce "Payment Link on Opportunity" flow triggers (SOQL limit)
             if (originalOpp.Invoice__c != null) {
-                // Set flags to trigger creation of a new invoice for the new opportunity
-                newOpp.Set_Create_Invoice__c = true;
-                update newOpp;
-                
-                // Mark original opp to revise its invoice (to reflect the transfer out)
                 originalOpp.Revise_Invoice__c = true;
-                update originalOpp;
             }
+            update originalOpp;
 
             // Build result
             result.success = true;
