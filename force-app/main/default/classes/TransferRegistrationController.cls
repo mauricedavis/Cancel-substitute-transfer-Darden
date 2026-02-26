@@ -175,7 +175,7 @@ public with sharing class TransferRegistrationController {
                    Product_Family__c, Discount_Code__c
             FROM OpportunityLineItem
             WHERE OpportunityId = :data.originalOpp.Id
-              AND Product_Family__c = 'Discount'
+              AND (Product_Family__c = 'Discount' OR Product_Family__c = 'Discounts')
             ORDER BY CreatedDate ASC
         ];
 
@@ -375,12 +375,13 @@ public with sharing class TransferRegistrationController {
             ];
 
             // ── QUERY 4b: Original Discount OLIs ─────────────────────
+            // Org uses Product_Family__c = 'Discounts' (plural) per Transfer_Subflow
             List<OpportunityLineItem> originalDiscountOLIs = [
                 SELECT Id, PricebookEntryId, Product2Id, Product2.Name,
                        UnitPrice, Quantity, TotalPrice, Discount_Code__c, Description
                 FROM OpportunityLineItem
                 WHERE OpportunityId = :originalOpp.Id
-                  AND Product_Family__c = 'Discount'
+                  AND (Product_Family__c = 'Discount' OR Product_Family__c = 'Discounts')
             ];
 
             // ── QUERY 5: ALL PricebookEntries upfront ──────────────
@@ -396,12 +397,13 @@ public with sharing class TransferRegistrationController {
                       AND IsActive = true
                       AND (Product2.Family = 'Program Fee'
                            OR Product2.Family = 'Discount'
+                           OR Product2.Family = 'Discounts'
                            OR Product2.Name = 'Transfer Fee')
                 ];
                 for (PricebookEntry pbe : allPBEs) {
                     if (pbe.Product2.Name == 'Transfer Fee') {
                         pbeByKey.put('TransferFee', pbe);
-                    } else if (pbe.Product2.Family == 'Discount') {
+                    } else if (pbe.Product2.Family == 'Discount' || pbe.Product2.Family == 'Discounts') {
                         pbeByKey.put('Discount', pbe);
                     } else if (pbe.Product2.Family == 'Program Fee') {
                         pbeByKey.put('ProgramFee', pbe);
@@ -589,7 +591,7 @@ public with sharing class TransferRegistrationController {
                         discountOLI.OpportunityId = newOpp.Id;
                         discountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
                         discountOLI.Quantity = 1;
-                        discountOLI.Product_Family__c = 'Discount';
+                        discountOLI.Product_Family__c = 'Discounts';
                         discountOLI.Description = origDiscount.Description;
                         discountOLI.Discount_Code__c = String.isNotBlank(request.discountCode)
                             ? request.discountCode
@@ -622,7 +624,7 @@ public with sharing class TransferRegistrationController {
                     discountOLI.PricebookEntryId = pbeByKey.get('Discount').Id;
                     discountOLI.Quantity = 1;
                     discountOLI.UnitPrice = -Math.abs(request.discountAmount);
-                    discountOLI.Product_Family__c = 'Discount';
+                    discountOLI.Product_Family__c = 'Discounts';
                     if (String.isNotBlank(request.discountCode)) {
                         discountOLI.Discount_Code__c = request.discountCode;
                         discountOLI.Description = request.discountCode;
@@ -685,6 +687,14 @@ public with sharing class TransferRegistrationController {
                 newOpp.Invoice_Created__c = Date.today();
                 newOpp.Set_Create_Invoice__c = true;
                 // Do NOT copy Invoice_Auto_Number__c — leave null so org automation assigns new invoice #
+            } else {
+                // Original has no invoice — create NEW Invoice__c for new opp
+                Invoice__c newInvoice = new Invoice__c();
+                newInvoice.Opportunity__c = newOpp.Id;
+                insert newInvoice;
+                newOpp.Invoice__c = newInvoice.Id;
+                newOpp.Invoice_Created__c = Date.today();
+                newOpp.Set_Create_Invoice__c = true;
             }
             update newOpp;
 
@@ -1208,12 +1218,13 @@ public with sharing class TransferRegistrationController {
             ];
 
             // ── QUERY 5: Original Discount OLIs ────────────────────
+            // Org uses Product_Family__c = 'Discounts' (plural) per Substitution_Subflow
             List<OpportunityLineItem> originalDiscounts = [
                 SELECT Id, PricebookEntryId, Product2Id, Product2.Name,
                        UnitPrice, Quantity, TotalPrice, Description
                 FROM OpportunityLineItem
                 WHERE OpportunityId = :originalOpp.Id
-                  AND Product_Family__c = 'Discount'
+                  AND (Product_Family__c = 'Discount' OR Product_Family__c = 'Discounts')
                 LIMIT 1
             ];
 
@@ -1342,6 +1353,7 @@ public with sharing class TransferRegistrationController {
                 newDiscountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
                 newDiscountOLI.Quantity = 1;
                 newDiscountOLI.UnitPrice = origDiscount.UnitPrice;
+                newDiscountOLI.Product_Family__c = 'Discounts';
                 newDiscountOLI.Description = origDiscount.Description;
                 olisToInsert.add(newDiscountOLI);
             }
