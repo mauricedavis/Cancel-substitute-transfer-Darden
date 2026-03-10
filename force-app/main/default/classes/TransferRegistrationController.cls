@@ -15,6 +15,15 @@
  *               (UTM Parameters flow). This controller is optimized to use
  *               minimal SOQL (~6 queries) to leave headroom for automation.
  *
+ *               Opportunity Tracker: We update the original Opportunity to
+ *               StageName='Transferred Out' and Registration_Change_Type__c='Transferred Out'
+ *               BEFORE inserting credit/transfer-fee OLIs, so when Amount changes
+ *               the process does not match "Registered + Paid + null change type".
+ *               If the flow still errors, add a safeguard: in the rule that runs
+ *               the FlowActionCall (e.g. myRule_31), add conditions so it does NOT
+ *               run when Registration_Change_Type__c is not null, or when
+ *               StageName is 'Transferred Out'/'Canceled', or when Amount <= 0.
+ *
  * @author       Maury Davis (MJD) - Attain Partners
  * @date         2026-02-12
  * @ticket       EELL-216
@@ -266,6 +275,58 @@ public with sharing class TransferRegistrationController {
         return details;
     }
 
+    // --- DISCOUNT BY CODE (validation + calculation) --------------------
+
+    public class DiscountByCodeResult {
+        @AuraEnabled public Boolean valid;
+        @AuraEnabled public Decimal discountAmount;
+        @AuraEnabled public String errorMessage;
+    }
+
+    @AuraEnabled
+    public static DiscountByCodeResult getDiscountByCode(String discountCode, Id pricebook2Id, Decimal newProgramFeeAmount) {
+        DiscountByCodeResult result = new DiscountByCodeResult();
+        result.valid = false;
+        result.discountAmount = 0;
+        result.errorMessage = '';
+
+        if (String.isBlank(discountCode) || pricebook2Id == null) {
+            result.errorMessage = 'Discount code and pricebook are required.';
+            return result;
+        }
+
+        String codeKey = discountCode.toUpperCase().trim();
+        Decimal newFee = (newProgramFeeAmount != null && newProgramFeeAmount > 0) ? newProgramFeeAmount : 0;
+
+        List<PricebookEntry> pbes = [
+            SELECT Id, Product2Id, Product2.Name, Product2.ProductCode, Product2.Discount_Percent__c, UnitPrice
+            FROM PricebookEntry
+            WHERE Pricebook2Id = :pricebook2Id
+              AND IsActive = true
+              AND (Product2.Family = 'Discount' OR Product2.Family = 'Discounts')
+        ];
+
+        for (PricebookEntry pbe : pbes) {
+            Boolean matches = (pbe.Product2.ProductCode != null && pbe.Product2.ProductCode.toUpperCase().trim() == codeKey)
+                || (pbe.Product2.Name != null && pbe.Product2.Name.toUpperCase().trim() == codeKey);
+            if (!matches) continue;
+
+            result.valid = true;
+            if (pbe.Product2.Discount_Percent__c != null && pbe.Product2.Discount_Percent__c > 0 && newFee > 0) {
+                result.discountAmount = newFee * pbe.Product2.Discount_Percent__c / 100;
+            } else if (pbe.UnitPrice != null && pbe.UnitPrice != 0) {
+                result.discountAmount = Math.abs(pbe.UnitPrice);
+            } else {
+                result.valid = false;
+                result.errorMessage = 'Discount product "' + discountCode + '" has no Discount Percent or Unit Price.';
+            }
+            return result;
+        }
+
+        result.errorMessage = 'Discount code "' + discountCode + '" was not found in the pricebook.';
+        return result;
+    }
+
     // --- EXECUTE TRANSFER -----------------------------------------------
     // SOQL-optimized: ~6 queries total to leave headroom for org automation
     // (Attendee Master, SLX Attendee Sync, DLRS, Contact UTM flows).
@@ -392,7 +453,7 @@ public with sharing class TransferRegistrationController {
             
             if (originalOpp.Pricebook2Id != null) {
                 List<PricebookEntry> allPBEs = [
-                    SELECT Id, Product2Id, Product2.Name, Product2.Family, Product2.ProductCode, UnitPrice
+                    SELECT Id, Product2Id, Product2.Name, Product2.Family, Product2.ProductCode, Product2.Discount_Percent__c, UnitPrice
                     FROM PricebookEntry
                     WHERE Pricebook2Id = :originalOpp.Pricebook2Id
                       AND IsActive = true
@@ -401,7 +462,6 @@ public with sharing class TransferRegistrationController {
                            OR Product2.Family = 'Discounts'
                            OR Product2.Name = 'Transfer Fee')
                 ];
-                Map<String, PricebookEntry> pbeByDiscountCode = new Map<String, PricebookEntry>();
                 for (PricebookEntry pbe : allPBEs) {
                     if (pbe.Product2.Name == 'Transfer Fee') {
                         pbeByKey.put('TransferFee', pbe);
@@ -472,11 +532,6 @@ public with sharing class TransferRegistrationController {
                 olisToInsert.add(transferFeeOLI);
             }
 
-            // Batch insert credit + transfer fee OLIs
-            if (!olisToInsert.isEmpty()) {
-                insert olisToInsert;
-            }
-
             // 3. Update original Attendee
             //    evt__Invitation_Status__c drives the Status__c formula.
             //    Setting to 'Transferred' makes Status__c = 'Transferred Out'.
@@ -492,6 +547,14 @@ public with sharing class TransferRegistrationController {
             originalOpp.Reg_Change_Comments__c = request.regChangeComments;
             originalOpp.Transferred_to__c = request.newSpecialEventId;
             update originalOpp;
+
+            // Batch insert credit + transfer fee OLIs
+            // Insert after updating the original Opportunity so that
+            // org automation (e.g., Opportunity Tracker) sees
+            // Registration_Change_Type__c = 'Transferred Out' when Amount changes.
+            if (!olisToInsert.isEmpty()) {
+                insert olisToInsert;
+            }
 
             // 5. Create new Registration Opportunity
             Opportunity newOpp = new Opportunity();
@@ -600,11 +663,7 @@ public with sharing class TransferRegistrationController {
                         discountOLI.OpportunityId = newOpp.Id;
                         discountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
                         discountOLI.Quantity = 1;
-                        discountOLI.Product_Family__c = 'Discounts';
                         discountOLI.Description = origDiscount.Description;
-                        discountOLI.Discount_Code__c = String.isNotBlank(request.discountCode)
-                            ? request.discountCode
-                            : origDiscount.Discount_Code__c;
 
                         if (sameProgramEE) {
                             // Same program - use original discount amount
@@ -634,26 +693,30 @@ public with sharing class TransferRegistrationController {
                         ? -Math.abs(request.discountAmount) : null;
                     if (String.isNotBlank(request.discountCode) && pbeByDiscountCode.containsKey(request.discountCode.toUpperCase().trim())) {
                         discountPBE = pbeByDiscountCode.get(request.discountCode.toUpperCase().trim());
-                        if (discountAmt == null && discountPBE.UnitPrice != null && discountPBE.UnitPrice != 0) {
-                            discountAmt = discountPBE.UnitPrice < 0 ? discountPBE.UnitPrice : -discountPBE.UnitPrice;
+                        if (discountAmt == null && discountPBE != null) {
+                            // Prefer Product2.Discount_Percent__c to calculate from new program fee
+                            Decimal newFee = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
+                            if (discountPBE.Product2.Discount_Percent__c != null && discountPBE.Product2.Discount_Percent__c > 0 && newFee > 0) {
+                                discountAmt = -(newFee * discountPBE.Product2.Discount_Percent__c / 100);
+                            } else if (discountPBE.UnitPrice != null && discountPBE.UnitPrice != 0) {
+                                discountAmt = discountPBE.UnitPrice < 0 ? discountPBE.UnitPrice : -discountPBE.UnitPrice;
+                            }
                         }
                     }
                     if (discountPBE == null && pbeByKey.containsKey('Discount')) {
                         discountPBE = pbeByKey.get('Discount');
                     }
-                    if (discountPBE != null && (discountAmt != null || (discountPBE.UnitPrice != null && discountPBE.UnitPrice != 0))) {
-                        if (discountAmt == null) {
-                            discountAmt = discountPBE.UnitPrice < 0 ? discountPBE.UnitPrice : -Math.abs(discountPBE.UnitPrice);
-                        }
+                    if (discountPBE != null && discountAmt == null && discountPBE.UnitPrice != null && discountPBE.UnitPrice != 0) {
+                        discountAmt = discountPBE.UnitPrice < 0 ? discountPBE.UnitPrice : -Math.abs(discountPBE.UnitPrice);
+                    }
+                    if (discountPBE != null && discountAmt != null && discountAmt != 0) {
                         OpportunityLineItem discountOLI = new OpportunityLineItem();
                         discountOLI.OpportunityId = newOpp.Id;
                         discountOLI.PricebookEntryId = discountPBE.Id;
                         discountOLI.Quantity = 1;
                         discountOLI.UnitPrice = discountAmt;
-                        discountOLI.Product_Family__c = 'Discounts';
                         if (String.isNotBlank(request.discountCode)) {
-                        discountOLI.Discount_Code__c = request.discountCode.trim();
-                        discountOLI.Description = request.discountCode.trim();
+                            discountOLI.Description = request.discountCode.trim();
                         }
                         effectiveDiscountAmount = Math.abs(discountAmt);
                         newOppOLIs.add(discountOLI);
@@ -697,36 +760,35 @@ public with sharing class TransferRegistrationController {
 
             insert newAttendee;
 
-            // Update newOpp: Attendee__c + Invoice handling (match Transfer_Subflow)
+            // Update newOpp: Attendee__c + Invoice handling
+            // Always create a NEW invoice for the new opp — never link to the old invoice.
+            // Original opp keeps its invoice; Revise_Invoice__c triggers org to update it.
             newOpp.Attendee__c = newAttendee.Id;
-            if (originalOpp.Invoice__c != null) {
-                // Move existing invoice to new opp (matches flow Update_Invoice)
-                List<Invoice__c> invoices = [
-                    SELECT Id, Opportunity__c
-                    FROM Invoice__c
-                    WHERE Id = :originalOpp.Invoice__c
-                    LIMIT 1
-                ];
-                if (!invoices.isEmpty()) {
-                    invoices[0].Opportunity__c = newOpp.Id;
-                    update invoices;
-                    newOpp.Invoice__c = invoices[0].Id;
-                }
-                newOpp.Invoice_Created__c = Date.today();
-                newOpp.Set_Create_Invoice__c = true;
-                // Do NOT copy Invoice_Auto_Number__c — leave null so org automation assigns new invoice #
-            } else {
-                // Original has no invoice — create NEW Invoice__c for new opp
-                Invoice__c newInvoice = new Invoice__c();
-                newInvoice.Opportunity__c = newOpp.Id;
-                insert newInvoice;
-                newOpp.Invoice__c = newInvoice.Id;
-                newOpp.Invoice_Created__c = Date.today();
-                newOpp.Set_Create_Invoice__c = true;
+            primaryContactId = originalOpp.Primary_Contact__c != null ? originalOpp.Primary_Contact__c : originalOpp.ContactId;
+            if (primaryContactId == null && attendee.evt__Contact__c != null) {
+                primaryContactId = attendee.evt__Contact__c;
             }
+            String nextInvoiceNumber = getNextInvoiceNumber();
+            Invoice__c newInvoice = new Invoice__c();
+            newInvoice.Opportunity__c = newOpp.Id;
+            if (primaryContactId != null) {
+                newInvoice.Contact__c = primaryContactId;
+            }
+            // Set both the Name and Invoice_Number__c fields to use
+            // the EE+number convention, matching the client's PROD behavior.
+            newInvoice.Name = nextInvoiceNumber;
+            newInvoice.Invoice_Number__c = nextInvoiceNumber;
+            insert newInvoice;
+            newOpp.Invoice__c = newInvoice.Id;
+            // Invoice_Auto_Number__c is Decimal — store numeric part only (e.g. 102214 from EE102214)
+            if (nextInvoiceNumber.length() > 2 && nextInvoiceNumber.substring(2).isNumeric()) {
+                newOpp.Invoice_Auto_Number__c = Decimal.valueOf(nextInvoiceNumber.substring(2));
+            }
+            newOpp.Invoice_Created__c = Date.today();
+            newOpp.Set_Create_Invoice__c = true;
             update newOpp;
 
-            // 10. Payment Handling — based on payment status and standalone/parent logic
+            // 10. Payment Handling — DEFERRED to @future to avoid SOQL limit (Payment Master, DLRS)
             // Calculate the new opportunity total amount
             Decimal newOppTotal = request.newProgramFeeAmount != null ? request.newProgramFeeAmount : 0;
             if (request.applyDiscount) {
@@ -739,97 +801,57 @@ public with sharing class TransferRegistrationController {
             Boolean isStandalone = originalOpp.Has_Parent_Opportunity__c != 'Yes';
             Boolean hasPaidPayments = originalOpp.Total_Paid__c != null && originalOpp.Total_Paid__c > 0;
             
-            List<pymt__PaymentX__c> paymentsToUpdate = new List<pymt__PaymentX__c>();
-            
-            // Separate payments by status
-            List<pymt__PaymentX__c> paidPayments = new List<pymt__PaymentX__c>();
-            List<pymt__PaymentX__c> unpaidPayments = new List<pymt__PaymentX__c>();
-            
+            List<Id> paymentIdsToMove = new List<Id>();
             for (pymt__PaymentX__c pmt : allPayments) {
-                if (pmt.pymt__Status__c == 'Completed') {
-                    paidPayments.add(pmt);
-                } else {
-                    unpaidPayments.add(pmt);
+                if (isStandalone) {
+                    if (pmt.pymt__Status__c == 'Completed' && hasPaidPayments) {
+                        paymentIdsToMove.add(pmt.Id);
+                    } else if (pmt.pymt__Status__c != 'Completed') {
+                        paymentIdsToMove.add(pmt.Id);
+                    }
                 }
             }
             
-            // Move PAID payments to new opp (if standalone and has paid amount)
-            if (isStandalone && hasPaidPayments && !paidPayments.isEmpty()) {
-                for (pymt__PaymentX__c pmt : paidPayments) {
-                    pmt.pymt__Opportunity__c = newOpp.Id;
-                    paymentsToUpdate.add(pmt);
-                }
-            }
-            
-            // Update UNPAID/PENDING payments - move to new opp AND update amount
-            if (isStandalone && !unpaidPayments.isEmpty()) {
-                for (pymt__PaymentX__c pmt : unpaidPayments) {
-                    pmt.pymt__Opportunity__c = newOpp.Id;
-                    pmt.pymt__Amount__c = newOppTotal;
-                    paymentsToUpdate.add(pmt);
-                }
-            }
-            
-            if (!paymentsToUpdate.isEmpty()) {
-                update paymentsToUpdate;
-            }
-            
-            // 10b. Create payment record for transfer fee on ORIGINAL opp
             Decimal actualTransferFee = (request.applyTransferFee && request.transferFeeAmount != null && request.transferFeeAmount > 0)
                 ? request.transferFeeAmount
                 : (request.applyTransferFee && pbeByKey.containsKey('TransferFee') ? pbeByKey.get('TransferFee').UnitPrice : 0);
-            
-            if (request.applyTransferFee && actualTransferFee > 0) {
-                pymt__PaymentX__c transferFeePayment = new pymt__PaymentX__c();
-                transferFeePayment.pymt__Opportunity__c = originalOpp.Id;
-                transferFeePayment.pymt__Amount__c = actualTransferFee;
-                transferFeePayment.pymt__Status__c = 'Scheduled';
-                transferFeePayment.pymt__Date__c = Date.today();
-                transferFeePayment.pymt__Memo__c = 'Transfer fee for transfer to ' + newOpp.Name;
-                transferFeePayment.pymt__Contact__c = originalOpp.Primary_Contact__c != null 
-                    ? originalOpp.Primary_Contact__c 
-                    : originalOpp.ContactId;
-                transferFeePayment.pymt__Account__c = originalOpp.AccountId;
-                insert transferFeePayment;
-            }
-
-            // 11. Settlement Handling
+            Decimal netCredit = 0;
             if (String.isNotBlank(request.settlementType)) {
                 Decimal transferFeeAmount = (request.applyTransferFee && pbeByKey.containsKey('TransferFee'))
                     ? pbeByKey.get('TransferFee').UnitPrice : 0;
-                Decimal netCredit = originalFeeTotal - transferFeeAmount;
-
-                if (request.settlementType == 'Unapplied Funds' && netCredit > 0) {
-                    Unapplied_Funds__c uf = new Unapplied_Funds__c();
-                    uf.Amount__c = netCredit;
-                    uf.Contact__c = originalOpp.ContactId;
-                    uf.Originating_Opportunity__c = originalOpp.Id;
-                    uf.Applied_Opportunity__c = newOpp.Id;
-                    uf.Original_Credit_Amount__c = netCredit;
-                    uf.Memo__c = 'Transfer from ' + originalOpp.Name + ' to ' + newOpp.Name;
-                    insert uf;
-
-                } else if (request.settlementType == 'Refund' && netCredit > 0) {
-                    pymt__PaymentX__c refund = new pymt__PaymentX__c();
-                    refund.pymt__Opportunity__c = originalOpp.Id;
-                    refund.pymt__Amount__c = -netCredit;
-                    refund.pymt__Status__c = 'Pending';
-                    refund.pymt__Date__c = Date.today();
-                    refund.pymt__Memo__c = 'Refund for transfer to ' + newOpp.Name;
-                    refund.pymt__Contact__c = originalOpp.ContactId;
-                    refund.pymt__Account__c = originalOpp.AccountId;
-                    refund.RecordTypeId = Schema.SObjectType.pymt__PaymentX__c
-                        .getRecordTypeInfosByDeveloperName().get('Refund').getRecordTypeId();
-                    insert refund;
-                }
+                netCredit = originalFeeTotal - transferFeeAmount;
             }
 
-            // 12. Invoice Handling - Update originalOpp with Reg_Change_New_Opportunity__c + Revise_Invoice__c
-            // Single update to reduce "Payment Link on Opportunity" flow triggers (SOQL limit)
-            if (originalOpp.Invoice__c != null) {
-                originalOpp.Revise_Invoice__c = true;
+            // 11. Settlement Handling — Unapplied Funds stays in main tx (no Payment Master trigger)
+            if (String.isNotBlank(request.settlementType) && request.settlementType == 'Unapplied Funds' && netCredit > 0) {
+                Unapplied_Funds__c uf = new Unapplied_Funds__c();
+                uf.Amount__c = netCredit;
+                uf.Contact__c = originalOpp.ContactId;
+                uf.Originating_Opportunity__c = originalOpp.Id;
+                uf.Applied_Opportunity__c = newOpp.Id;
+                uf.Original_Credit_Amount__c = netCredit;
+                uf.Memo__c = 'Transfer from ' + originalOpp.Name + ' to ' + newOpp.Name;
+                insert uf;
             }
-            update originalOpp;
+
+            // 12. Defer payment DML to avoid SOQL limit (Payment Master flow)
+            deferTransferPaymentUpdates(
+                paymentIdsToMove,
+                newOpp.Id,
+                newOppTotal,
+                originalOpp.Id,
+                originalOpp.Name,
+                originalOpp.Primary_Contact__c != null ? originalOpp.Primary_Contact__c : originalOpp.ContactId,
+                originalOpp.AccountId,
+                request.applyTransferFee && actualTransferFee > 0,
+                actualTransferFee,
+                request.settlementType == 'Refund' && netCredit > 0,
+                netCredit,
+                originalOpp.Invoice__c != null
+            );
+
+            // 13. originalOpp Reg_Change_New_Opportunity__c + Revise_Invoice__c — deferred to @future
+            // (avoids Payment Master / Payment Link flow SOQL limit in main transaction)
 
             // Build result
             result.success = true;
@@ -844,6 +866,87 @@ public with sharing class TransferRegistrationController {
         }
 
         return result;
+    }
+
+    // --- INVOICE NUMBER SEQUENCE (EE + numeric) ---
+    private static String getNextInvoiceNumber() {
+        List<Invoice__c> latest = [
+            SELECT Invoice_Number__c
+            FROM Invoice__c
+            WHERE Invoice_Number__c LIKE 'EE%'
+            ORDER BY Invoice_Number__c DESC
+            LIMIT 1
+        ];
+        Integer nextNum = 1;
+        if (!latest.isEmpty() && String.isNotBlank(latest[0].Invoice_Number__c)) {
+            String numPart = latest[0].Invoice_Number__c.substring(2);
+            if (numPart.isNumeric()) {
+                nextNum = Integer.valueOf(numPart) + 1;
+            }
+        }
+        return 'EE' + String.valueOf(nextNum);
+    }
+
+    // --- DEFERRED PAYMENT UPDATES (avoids SOQL limit from Payment Master flow) ---
+    @future
+    public static void deferTransferPaymentUpdates(
+        List<Id> paymentIdsToMove,
+        Id newOppId,
+        Decimal newOppTotal,
+        Id originalOppId,
+        String originalOppName,
+        Id contactId,
+        Id accountId,
+        Boolean createTransferFeePayment,
+        Decimal transferFeeAmount,
+        Boolean createRefund,
+        Decimal refundAmount,
+        Boolean setReviseInvoice
+    ) {
+        if (paymentIdsToMove != null && !paymentIdsToMove.isEmpty()) {
+            List<pymt__PaymentX__c> payments = [
+                SELECT Id, pymt__Opportunity__c, pymt__Status__c, pymt__Amount__c
+                FROM pymt__PaymentX__c
+                WHERE Id IN :paymentIdsToMove
+            ];
+            for (pymt__PaymentX__c pmt : payments) {
+                pmt.pymt__Opportunity__c = newOppId;
+                if (pmt.pymt__Status__c != 'Completed') {
+                    pmt.pymt__Amount__c = newOppTotal;
+                }
+            }
+            update payments;
+        }
+        if (createTransferFeePayment && transferFeeAmount > 0) {
+            pymt__PaymentX__c transferFeePayment = new pymt__PaymentX__c();
+            transferFeePayment.pymt__Opportunity__c = originalOppId;
+            transferFeePayment.pymt__Amount__c = transferFeeAmount;
+            transferFeePayment.pymt__Status__c = 'Scheduled';
+            transferFeePayment.pymt__Date__c = Date.today();
+            transferFeePayment.pymt__Memo__c = 'Transfer fee for transfer to new registration';
+            transferFeePayment.pymt__Contact__c = contactId;
+            transferFeePayment.pymt__Account__c = accountId;
+            insert transferFeePayment;
+        }
+        if (createRefund && refundAmount > 0) {
+            pymt__PaymentX__c refund = new pymt__PaymentX__c();
+            refund.pymt__Opportunity__c = originalOppId;
+            refund.pymt__Amount__c = -refundAmount;
+            refund.pymt__Status__c = 'Pending';
+            refund.pymt__Date__c = Date.today();
+            refund.pymt__Memo__c = 'Refund for transfer';
+            refund.pymt__Contact__c = contactId;
+            refund.pymt__Account__c = accountId;
+            refund.RecordTypeId = Schema.SObjectType.pymt__PaymentX__c
+                .getRecordTypeInfosByDeveloperName().get('Refund').getRecordTypeId();
+            insert refund;
+        }
+        Opportunity origOpp = new Opportunity(
+            Id = originalOppId,
+            Reg_Change_New_Opportunity__c = newOppId,
+            Revise_Invoice__c = setReviseInvoice
+        );
+        update origOpp;
     }
 
     // --- EXECUTE CANCELLATION --------------------------------------------
@@ -1383,7 +1486,6 @@ public with sharing class TransferRegistrationController {
                 newDiscountOLI.PricebookEntryId = origDiscount.PricebookEntryId;
                 newDiscountOLI.Quantity = 1;
                 newDiscountOLI.UnitPrice = origDiscount.UnitPrice;
-                newDiscountOLI.Product_Family__c = 'Discounts';
                 newDiscountOLI.Description = origDiscount.Description;
                 olisToInsert.add(newDiscountOLI);
             }

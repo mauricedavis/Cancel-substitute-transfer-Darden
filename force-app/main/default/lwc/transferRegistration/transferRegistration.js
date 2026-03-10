@@ -15,6 +15,7 @@ import { NavigationMixin } from 'lightning/navigation';
 
 import getInitData from '@salesforce/apex/TransferRegistrationController.getInitData';
 import getProgramDetails from '@salesforce/apex/TransferRegistrationController.getProgramDetails';
+import getDiscountByCode from '@salesforce/apex/TransferRegistrationController.getDiscountByCode';
 import executeTransfer from '@salesforce/apex/TransferRegistrationController.executeTransfer';
 import executeCancellation from '@salesforce/apex/TransferRegistrationController.executeCancellation';
 import searchContacts from '@salesforce/apex/TransferRegistrationController.searchContacts';
@@ -86,6 +87,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
     @track applyDiscount = false;
     @track discountAmount = 0;
     @track discountCode = '';
+    @track calculatedDiscountAmount = null;  // From discount code lookup (for review display)
     @track regChangeComments = '';
 
     // Step 4 - Results
@@ -402,7 +404,9 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
     }
 
     get formattedDiscountAmount() {
-        return CURRENCY_FORMATTER.format(-(this.discountAmount || 0));
+        const amt = this.calculatedDiscountAmount != null ? this.calculatedDiscountAmount
+            : (this.discountAmount && Number(this.discountAmount) > 0 ? Number(this.discountAmount) : 0);
+        return CURRENCY_FORMATTER.format(-amt);
     }
 
     get formattedNetCredit() {
@@ -507,15 +511,18 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         if (!this.applyDiscount) {
             this.discountAmount = 0;
             this.discountCode = '';
+            this.calculatedDiscountAmount = null;
         }
     }
 
     handleDiscountAmountChange(event) {
         this.discountAmount = event.target.value;
+        this.calculatedDiscountAmount = null;  // User entered amount, clear code-based calc
     }
 
     handleDiscountCodeChange(event) {
         this.discountCode = event.target.value;
+        this.calculatedDiscountAmount = null;  // Code changed, re-validate on Next
     }
 
     handleCommentsChange(event) {
@@ -615,6 +622,27 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
 
             } else if (this.currentStep === '2') {
                 if (!this.validateStep2()) return;
+                if (this.applyDiscount && this.discountCode && (!this.discountAmount || Number(this.discountAmount) <= 0)) {
+                    this.isLoading = true;
+                    try {
+                        const result = await getDiscountByCode({
+                            discountCode: this.discountCode.trim(),
+                            pricebook2Id: this.initData?.originalOpp?.Pricebook2Id,
+                            newProgramFeeAmount: Number(this.newProgramFeeAmount) || 0
+                        });
+                        if (!result.valid) {
+                            this.showToast('Validation Error', result.errorMessage || 'Invalid discount code.', 'error');
+                            this.isLoading = false;
+                            return;
+                        }
+                        this.calculatedDiscountAmount = result.discountAmount || 0;
+                    } catch (err) {
+                        this.showToast('Error', this.extractErrorMessage(err), 'error');
+                        this.isLoading = false;
+                        return;
+                    }
+                    this.isLoading = false;
+                }
                 this.currentStep = '3';
             }
         }
@@ -682,6 +710,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         this.applyDiscount = false;
         this.discountAmount = 0;
         this.discountCode = '';
+        this.calculatedDiscountAmount = null;
         this.regChangeComments = '';
         this.transferResult = {};
         // Cancellation state
