@@ -20,6 +20,7 @@ import executeTransfer from '@salesforce/apex/TransferRegistrationController.exe
 import executeCancellation from '@salesforce/apex/TransferRegistrationController.executeCancellation';
 import searchContacts from '@salesforce/apex/TransferRegistrationController.searchContacts';
 import executeSubstitution from '@salesforce/apex/TransferRegistrationController.executeSubstitution';
+import getCancellationReasonLostOptions from '@salesforce/apex/TransferRegistrationController.getCancellationReasonLostOptions';
 
 const PROGRAM_COLUMNS = [
     { label: 'Program Name', fieldName: 'Name', type: 'text', sortable: true, wrapText: true, initialWidth: 250 },
@@ -98,6 +99,8 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
     @track cancellationFeeAmount = 0;
     @track cancelSettlementType = '';
     @track cancelComments = '';
+    @track cancellationReasonLost = '';
+    @track reasonLostOptions = [];
     @track cancellationResult = {};
 
     // ═══════════════ SUBSTITUTION STATE ═══════════════
@@ -124,6 +127,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         try {
             this.initData = await getInitData({ attendeeId: this.recordId });
             this.availablePrograms = this.initData.availablePrograms || [];
+            await this.loadCancellationReasonLostOptions();
         } catch (error) {
             this.hasError = true;
             this.errorMessage = this.extractErrorMessage(error);
@@ -222,7 +226,9 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
             return !this.selectedProgram;
         }
         if (this.isCancellationStep1) {
-            return this.applyCancellationFee && (!this.cancellationFeeAmount || Number(this.cancellationFeeAmount) <= 0);
+            const feeInvalid = this.applyCancellationFee && (!this.cancellationFeeAmount || Number(this.cancellationFeeAmount) <= 0);
+            const reasonMissing = !String(this.cancellationReasonLost || '').trim();
+            return feeInvalid || reasonMissing;
         }
         if (this.isCancellationStep2) {
             return !this.cancelSettlementType;
@@ -274,6 +280,17 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
     get formattedCancellationCredit() {
         const oppAmount = this.initData?.originalOpp?.Amount || 0;
         return CURRENCY_FORMATTER.format(-oppAmount);
+    }
+
+    get hasPicklistReasonLostOptions() {
+        return Array.isArray(this.reasonLostOptions) && this.reasonLostOptions.length > 0;
+    }
+
+    get formattedCancellationReasonLostDisplay() {
+        const v = String(this.cancellationReasonLost || '').trim();
+        if (!v) return '';
+        const opt = this.reasonLostOptions?.find((o) => o.value === v);
+        return opt ? opt.label : v;
     }
 
     get cancelSettlementDescription() {
@@ -659,6 +676,10 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
                     this.showToast('Error', 'Please enter a valid cancellation fee amount.', 'error');
                     return;
                 }
+                if (!String(this.cancellationReasonLost || '').trim()) {
+                    this.showToast('Error', 'Reason Lost is required.', 'error');
+                    return;
+                }
                 if (this.requiresSettlementScreen) {
                     this.currentStep = '2';
                 } else {
@@ -724,6 +745,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         this.cancellationFeeAmount = 0;
         this.cancelSettlementType = '';
         this.cancelComments = '';
+        this.cancellationReasonLost = '';
         this.cancellationResult = {};
         // Substitution state
         this.contactSearchTerm = '';
@@ -844,10 +866,30 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
 
     // ═══════════════ EXECUTE CANCELLATION ═══════════════
 
+    async loadCancellationReasonLostOptions() {
+        try {
+            const opts = await getCancellationReasonLostOptions();
+            this.reasonLostOptions = Array.isArray(opts) ? opts : [];
+        } catch (e) {
+            this.reasonLostOptions = [];
+        }
+    }
+
+    handleCancellationReasonLostChange(event) {
+        const v = event.detail?.value !== undefined ? event.detail.value : (event.target?.value ?? '');
+        this.cancellationReasonLost = v;
+    }
+
     async handleExecuteCancellation() {
         this.isProcessing = true;
 
         try {
+            if (!String(this.cancellationReasonLost || '').trim()) {
+                this.showToast('Error', 'Reason Lost is required.', 'error');
+                this.isProcessing = false;
+                return;
+            }
+
             const attendeeId = this.recordId || this.initData?.attendee?.Id;
 
             if (!attendeeId || attendeeId === '' || attendeeId.length < 15) {
@@ -866,7 +908,8 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
                 applyCancellationFee: this.applyCancellationFee,
                 cancellationFeeAmount: this.applyCancellationFee ? Number(this.cancellationFeeAmount) : 0,
                 settlementType: this.cancelSettlementType || null,
-                cancelComments: this.cancelComments || ''
+                cancelComments: this.cancelComments || '',
+                reasonLost: String(this.cancellationReasonLost || '').trim()
             };
 
             const result = await executeCancellation({ request: request });

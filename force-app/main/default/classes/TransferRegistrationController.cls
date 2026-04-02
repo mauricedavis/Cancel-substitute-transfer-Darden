@@ -30,6 +30,12 @@
  */
 public with sharing class TransferRegistrationController {
 
+    /**
+     * Opportunity field API for "Reason Lost" (picklist or text) when stage becomes Canceled.
+     * If your org uses a different API name, change this constant only.
+     */
+    private static final String OPP_REASON_LOST_FIELD = 'Reason_Lost__c';
+
     // --- WRAPPER CLASSES ------------------------------------------------
 
     public class InitData {
@@ -83,6 +89,7 @@ public with sharing class TransferRegistrationController {
         @AuraEnabled public Decimal cancellationFeeAmount { get; set; }
         @AuraEnabled public String settlementType { get; set; }         // 'Refund', 'Unapplied Funds', 'Apply to Remaining Balance', or null
         @AuraEnabled public String cancelComments { get; set; }
+        @AuraEnabled public String reasonLost { get; set; }
     }
 
     public class CancellationResult {
@@ -93,6 +100,11 @@ public with sharing class TransferRegistrationController {
         @AuraEnabled public Decimal refundAmount { get; set; }
         @AuraEnabled public Id unappliedFundsId { get; set; }
         @AuraEnabled public Id taskId { get; set; }
+    }
+
+    public class ReasonLostPicklistOption {
+        @AuraEnabled public String label;
+        @AuraEnabled public String value;
     }
 
     // --- SUBSTITUTION WRAPPER CLASSES ------------------------------------
@@ -325,6 +337,32 @@ public with sharing class TransferRegistrationController {
 
         result.errorMessage = 'Discount code "' + discountCode + '" was not found in the pricebook.';
         return result;
+    }
+
+    /**
+     * Active picklist values for Reason Lost (cancellation UI). Empty if field is missing or not a picklist — LWC falls back to text entry.
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<ReasonLostPicklistOption> getCancellationReasonLostOptions() {
+        List<ReasonLostPicklistOption> out = new List<ReasonLostPicklistOption>();
+        String fldApi = resolveOpportunityFieldApiName(OPP_REASON_LOST_FIELD);
+        if (fldApi == null) {
+            return out;
+        }
+        Schema.DescribeFieldResult dfr = Schema.SObjectType.Opportunity.fields.getMap().get(fldApi).getDescribe();
+        if (dfr.getType() != Schema.DisplayType.PICKLIST) {
+            return out;
+        }
+        for (Schema.PicklistEntry pe : dfr.getPicklistValues()) {
+            if (!pe.isActive()) {
+                continue;
+            }
+            ReasonLostPicklistOption row = new ReasonLostPicklistOption();
+            row.label = pe.getLabel();
+            row.value = pe.getValue();
+            out.add(row);
+        }
+        return out;
     }
 
     // --- EXECUTE TRANSFER -----------------------------------------------
@@ -1041,6 +1079,10 @@ public with sharing class TransferRegistrationController {
             }
             Opportunity originalOpp = oppList[0];
 
+            if (opportunityHasReasonLostField() && String.isBlank(request.reasonLost)) {
+                throw new AuraHandledException('Reason Lost is required to cancel this registration.');
+            }
+
             // Original program-fee line PBE (same product as registration) for credit/refund/unapplied lines
             PricebookEntry originalProgramFeePBE = null;
             List<OpportunityLineItem> originalProgramFeeOlis = [
@@ -1278,6 +1320,7 @@ public with sharing class TransferRegistrationController {
             originalOpp.Reg_Change_Processed_By__c = UserInfo.getUserId();
             originalOpp.Reg_Change_Comments__c = request.cancelComments;
             originalOpp.Revise_Invoice__c = true;
+            applyReasonLostToOpportunity(originalOpp, request.reasonLost);
             update originalOpp;
 
             // 6. Update Parent Opportunity (if exists)
@@ -1297,6 +1340,54 @@ public with sharing class TransferRegistrationController {
         }
 
         return result;
+    }
+
+    private static Boolean opportunityHasReasonLostField() {
+        return resolveOpportunityFieldApiName(OPP_REASON_LOST_FIELD) != null;
+    }
+
+    private static String resolveOpportunityFieldApiName(String desiredApi) {
+        if (String.isBlank(desiredApi)) {
+            return null;
+        }
+        Map<String, Schema.SObjectField> fm = Schema.SObjectType.Opportunity.fields.getMap();
+        for (String k : fm.keySet()) {
+            if (k != null && k.equalsIgnoreCase(desiredApi)) {
+                return k;
+            }
+        }
+        return null;
+    }
+
+    private static void applyReasonLostToOpportunity(Opportunity opp, String reasonLost) {
+        if (String.isBlank(reasonLost)) {
+            return;
+        }
+        String fldApi = resolveOpportunityFieldApiName(OPP_REASON_LOST_FIELD);
+        if (fldApi == null) {
+            return;
+        }
+        opp.put(fldApi, reasonLost.trim());
+    }
+
+    /**
+     * First active picklist value for Reason Lost, or a text placeholder — used by tests when the field exists.
+     */
+    @TestVisible
+    private static String sampleReasonLostValueForTests() {
+        String fldApi = resolveOpportunityFieldApiName(OPP_REASON_LOST_FIELD);
+        if (fldApi == null) {
+            return null;
+        }
+        Schema.DescribeFieldResult dfr = Schema.SObjectType.Opportunity.fields.getMap().get(fldApi).getDescribe();
+        if (dfr.getType() == Schema.DisplayType.PICKLIST) {
+            for (Schema.PicklistEntry pe : dfr.getPicklistValues()) {
+                if (pe.isActive()) {
+                    return pe.getValue();
+                }
+            }
+        }
+        return 'Test cancellation reason';
     }
 
     // --- SEARCH CONTACTS (for Substitution) ------------------------------

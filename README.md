@@ -19,12 +19,15 @@ Lightning Web Component that consolidates three Salesforce Flow processes into a
 
 ### Cancellation Flow
 - Cancellation fee option (Yes/No with custom amount)
+- **Reason Lost** (required): captured on step 1 and written to the Opportunity when the stage is set to **Canceled**, so validation rules that require Reason Lost on cancel/closed lost can pass. If the field is a picklist, values come from `getCancellationReasonLostOptions`; otherwise a text/textarea entry is shown.
 - Settlement type selection for paid registrations
 - Automatic OLI creation (Cancellation Fee, Credit, Refund)
 - Credit amount and review UI use **net registration** (`Opportunity.Amount`), not raw program-fee subtotal, so discounts are reflected
 - Credit / refund / unapplied lines prefer the **original program fee line’s** `PricebookEntry` so the product name matches the registration (not a generic Program Fee from the pricebook)
 - Bundled registration support (parent invoice revision)
 - Task creation for refund processing
+
+**Org customization:** The Apex constant `OPP_REASON_LOST_FIELD` in `TransferRegistrationController.cls` defaults to `Reason_Lost__c`. If your org uses a different API name, change that constant only (no LWC change required if the field remains picklist or text).
 
 ### Transfer Flow
 - Program search and selection with auto-populated fees
@@ -110,7 +113,8 @@ Heavy flows on `evt__Attendee__c` (e.g. SLX Attendee Sync, Contact UTM updates, 
 | `getInitData(Id attendeeId)` | Initialize component with Attendee, Opportunity, and program data |
 | `getProgramDetails(Id specialEventId, Id pricebook2Id)` | Get program fee details for transfer |
 | `executeTransfer(TransferRequest request)` | Process transfer to new program |
-| `executeCancellation(CancellationRequest request)` | Process cancellation with settlement |
+| `executeCancellation(CancellationRequest request)` | Process cancellation with settlement (includes `reasonLost`) |
+| `getCancellationReasonLostOptions()` | Picklist values for Reason Lost (cacheable); empty if field missing or not a picklist |
 | `searchContacts(String searchTerm, Id accountId)` | Search contacts for substitution |
 | `executeSubstitution(SubstitutionRequest request)` | Process contact substitution |
 
@@ -122,6 +126,7 @@ Heavy flows on `evt__Attendee__c` (e.g. SLX Attendee Sync, Contact UTM updates, 
 | 2026-02-19 | 1.1 | Bug fixes: Program fee auto-populate, discount copying, invoice handling, naming convention |
 | 2026-03-26 | 1.2 | Cancellation: LWC review shows credit from `Opportunity.Amount`; Apex credit/refund/unapplied use original program fee `PricebookEntry` when present; tests adjusted for prod coverage and org rollups |
 | 2026-04-02 | 1.3 | Substitution: **Substituted Out** credit uses original program fee line’s `PricebookEntry` (same pattern as cancellation). **darden-fullsb:** deploy with `NoTestRun` when sandbox automation blocks deploy-time tests. **darden-prod:** deploy with `RunSpecifiedTests` → `TransferRegistrationControllerTest` (same commit as GitHub `main`). |
+| 2026-04-02 | 1.4 | Cancellation: **Reason Lost** on step 1 (picklist or free text); Apex requires and stamps field when `OPP_REASON_LOST_FIELD` exists on Opportunity (`Reason_Lost__c` by default). |
 
 ## Authors
 

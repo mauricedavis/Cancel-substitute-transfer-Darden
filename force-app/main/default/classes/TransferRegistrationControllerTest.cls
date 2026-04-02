@@ -341,6 +341,7 @@ private class TransferRegistrationControllerTest {
         request.cancellationFeeAmount = 0;
         request.settlementType = null;
         request.cancelComments = 'Unit test basic cancellation';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
 
         Test.startTest();
         TransferRegistrationController.CancellationResult result =
@@ -380,6 +381,7 @@ private class TransferRegistrationControllerTest {
         request.cancellationFeeAmount = 500;
         request.settlementType = null;
         request.cancelComments = 'Unit test cancellation with fee';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
 
         Test.startTest();
         TransferRegistrationController.CancellationResult result =
@@ -439,6 +441,7 @@ private class TransferRegistrationControllerTest {
         request.cancellationFeeAmount = 0;
         request.settlementType = null;
         request.cancelComments = 'Unit test net amount + PBE mapping';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
 
         Test.startTest();
         // Amount may be overwritten by automation after DML; credit must match Amount at execution time (same as production).

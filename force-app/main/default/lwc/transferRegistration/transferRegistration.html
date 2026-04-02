@@ -514,6 +514,31 @@
                     </div>
                 </template>
 
+                <template lwc:if={hasPicklistReasonLostOptions}>
+                    <lightning-combobox
+                        name="cancellationReasonLost"
+                        label="Reason Lost"
+                        value={cancellationReasonLost}
+                        placeholder="Select a reason"
+                        options={reasonLostOptions}
+                        onchange={handleCancellationReasonLostChange}
+                        required
+                        message-when-value-missing="Complete this field."
+                        class="slds-m-bottom_medium">
+                    </lightning-combobox>
+                </template>
+                <template lwc:else>
+                    <lightning-textarea
+                        label="Reason Lost"
+                        value={cancellationReasonLost}
+                        onchange={handleCancellationReasonLostChange}
+                        required
+                        max-length="4000"
+                        message-when-value-missing="Complete this field."
+                        class="slds-m-bottom_medium">
+                    </lightning-textarea>
+                </template>
+
                 <lightning-textarea
                     label="Cancel Request Comments"
                     value={cancelComments}
@@ -607,6 +632,11 @@
                     </tbody>
                 </table>
 
+                <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                    <div class="section-header slds-m-bottom_xx-small">Reason Lost</div>
+                    <div class="slds-text-body_small">{formattedCancellationReasonLostDisplay}</div>
+                </div>
+
                 <template lwc:if={cancelComments}>
                     <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
                         <div class="section-header slds-m-bottom_xx-small">Comments</div>
@@ -620,7 +650,7 @@
                         <li>Mark Attendee status as "Cancelled"</li>
                         <li>Create cancellation credit line item</li>
                         <template lwc:if={applyCancellationFee}><li>Apply cancellation fee</li></template>
-                        <li>Set Opportunity stage to "Canceled"</li>
+                        <li>Set Opportunity stage to "Canceled" and Reason Lost</li>
                         <li>Set "Revise Invoice" flag</li>
                         <template lwc:if={isSettlementRefund}>
                             <li>Create Task to process refund of {formattedCancellationRefund}</li>
