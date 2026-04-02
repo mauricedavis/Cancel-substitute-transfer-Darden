@@ -121,7 +121,7 @@ Heavy flows on `evt__Attendee__c` (e.g. SLX Attendee Sync, Contact UTM updates, 
 | 2026-02-17 | 1.0 | Initial implementation of all three change types |
 | 2026-02-19 | 1.1 | Bug fixes: Program fee auto-populate, discount copying, invoice handling, naming convention |
 | 2026-03-26 | 1.2 | Cancellation: LWC review shows credit from `Opportunity.Amount`; Apex credit/refund/unapplied use original program fee `PricebookEntry` when present; tests adjusted for prod coverage and org rollups |
-| 2026-04-02 | 1.3 | Substitution: **Substituted Out** credit uses original program fee line’s `PricebookEntry` (same pattern as cancellation); fullsb deploy validated with `NoTestRun` where deploy-time tests hit sandbox SOQL limits |
+| 2026-04-02 | 1.3 | Substitution: **Substituted Out** credit uses original program fee line’s `PricebookEntry` (same pattern as cancellation). **darden-fullsb:** deploy with `NoTestRun` when sandbox automation blocks deploy-time tests. **darden-prod:** deploy with `RunSpecifiedTests` → `TransferRegistrationControllerTest` (same commit as GitHub `main`). |
 
 ## Authors
 
