@@ -868,22 +868,70 @@ public with sharing class TransferRegistrationController {
         return result;
     }
 
-    // --- INVOICE NUMBER SEQUENCE (EE + numeric) ---
+    // --- INVOICE NUMBER SEQUENCE (EE + numeric, via Auto_Number__c) ---
     private static String getNextInvoiceNumber() {
-        List<Invoice__c> latest = [
-            SELECT Invoice_Number__c
-            FROM Invoice__c
-            WHERE Invoice_Number__c LIKE 'EE%'
-            ORDER BY Invoice_Number__c DESC
-            LIMIT 1
-        ];
         Integer nextNum = 1;
-        if (!latest.isEmpty() && String.isNotBlank(latest[0].Invoice_Number__c)) {
-            String numPart = latest[0].Invoice_Number__c.substring(2);
-            if (numPart.isNumeric()) {
-                nextNum = Integer.valueOf(numPart) + 1;
+
+        try {
+            // Primary source of truth: Auto_Number__c where Type__c = 'Invoice Number'.
+            // FOR UPDATE ensures we safely increment the counter even under concurrency.
+            List<Auto_Number__c> seqList = [
+                SELECT Id, Current_Number__c
+                FROM Auto_Number__c
+                WHERE Type__c = 'Invoice Number'
+                LIMIT 1
+                FOR UPDATE
+            ];
+
+            if (!seqList.isEmpty()) {
+                Auto_Number__c seq = seqList[0];
+                if (seq.Current_Number__c != null) {
+                    nextNum = Integer.valueOf(seq.Current_Number__c) + 1;
+                }
+                seq.Current_Number__c = nextNum;
+                update seq;
+            } else {
+                // Fallback: if no Auto_Number__c row exists yet, derive next from Invoice__c
+                // and create a new sequence record so future calls stay in sync.
+                List<Invoice__c> latest = [
+                    SELECT Invoice_Number__c
+                    FROM Invoice__c
+                    WHERE Invoice_Number__c LIKE 'EE%'
+                    ORDER BY Invoice_Number__c DESC
+                    LIMIT 1
+                ];
+                if (!latest.isEmpty() && String.isNotBlank(latest[0].Invoice_Number__c)) {
+                    String numPart = latest[0].Invoice_Number__c.substring(2);
+                    if (numPart.isNumeric()) {
+                        nextNum = Integer.valueOf(numPart) + 1;
+                    }
+                }
+                Auto_Number__c newSeq = new Auto_Number__c(
+                    Type__c = 'Invoice Number',
+                    Current_Number__c = nextNum
+                );
+                insert newSeq;
+            }
+        } catch (Exception e) {
+            // As a safety net, if anything goes wrong with Auto_Number__c
+            // (e.g. object/fields not present in a lower environment),
+            // fall back to the legacy max-Invoice__c approach so we
+            // never block transfers.
+            List<Invoice__c> latest = [
+                SELECT Invoice_Number__c
+                FROM Invoice__c
+                WHERE Invoice_Number__c LIKE 'EE%'
+                ORDER BY Invoice_Number__c DESC
+                LIMIT 1
+            ];
+            if (!latest.isEmpty() && String.isNotBlank(latest[0].Invoice_Number__c)) {
+                String numPart = latest[0].Invoice_Number__c.substring(2);
+                if (numPart.isNumeric()) {
+                    nextNum = Integer.valueOf(numPart) + 1;
+                }
             }
         }
+
         return 'EE' + String.valueOf(nextNum);
     }
 
@@ -993,6 +1041,30 @@ public with sharing class TransferRegistrationController {
             }
             Opportunity originalOpp = oppList[0];
 
+            // Original program-fee line PBE (same product as registration) for credit/refund/unapplied lines
+            PricebookEntry originalProgramFeePBE = null;
+            List<OpportunityLineItem> originalProgramFeeOlis = [
+                SELECT PricebookEntryId
+                FROM OpportunityLineItem
+                WHERE OpportunityId = :originalOpp.Id
+                  AND Product_Family__c = 'Program Fee'
+                  AND (Reverse_Product_Line_Item__c = false OR Reverse_Product_Line_Item__c = null)
+                ORDER BY CreatedDate ASC
+                LIMIT 1
+            ];
+            if (!originalProgramFeeOlis.isEmpty() && originalProgramFeeOlis[0].PricebookEntryId != null) {
+                List<PricebookEntry> opfVerify = [
+                    SELECT Id
+                    FROM PricebookEntry
+                    WHERE Id = :originalProgramFeeOlis[0].PricebookEntryId
+                      AND IsActive = true
+                    LIMIT 1
+                ];
+                if (!opfVerify.isEmpty()) {
+                    originalProgramFeePBE = opfVerify[0];
+                }
+            }
+
             // ── QUERY 3: PricebookEntries for cancellation products ─
             Map<String, PricebookEntry> pbeByName = new Map<String, PricebookEntry>();
             if (originalOpp.Pricebook2Id != null) {
@@ -1008,7 +1080,8 @@ public with sharing class TransferRegistrationController {
                 ];
                 for (PricebookEntry pbe : allPBEs) {
                     pbeByName.put(pbe.Product2.Name, pbe);
-                    if (pbe.Product2.Family == 'Program Fee') {
+                    // First Program Fee in iteration order — avoid last-match overwriting wrong product
+                    if (pbe.Product2.Family == 'Program Fee' && !pbeByName.containsKey('ProgramFee')) {
                         pbeByName.put('ProgramFee', pbe);
                     }
                 }
@@ -1084,9 +1157,12 @@ public with sharing class TransferRegistrationController {
                 }
             }
 
-            // 2b. Credit line item (negative amount to offset original fee)
+            // 2b. Credit line item (negative amount = net registration / Opportunity.Amount)
             if (oppAmount > 0) {
-                PricebookEntry creditPBE = pbeByName.get('Cancellation Credit');
+                PricebookEntry creditPBE = originalProgramFeePBE;
+                if (creditPBE == null) {
+                    creditPBE = pbeByName.get('Cancellation Credit');
+                }
                 if (creditPBE == null) {
                     creditPBE = pbeByName.get('ProgramFee');
                 }
@@ -1118,7 +1194,8 @@ public with sharing class TransferRegistrationController {
                     update pendingPayment;
                 } else {
                     // Update payment amount (subtract opp amount, add cancellation fee)
-                    Decimal newAmount = pendingPayment.pymt__Amount__c - oppAmount + cancellationFee;
+                    Decimal pendingAmt = pendingPayment.pymt__Amount__c != null ? pendingPayment.pymt__Amount__c : 0;
+                    Decimal newAmount = pendingAmt - oppAmount + cancellationFee;
                     pendingPayment.pymt__Amount__c = newAmount;
                     update pendingPayment;
                 }
@@ -1129,7 +1206,10 @@ public with sharing class TransferRegistrationController {
 
                 if (request.settlementType == 'Refund') {
                     // Create refund line item
-                    PricebookEntry refundPBE = pbeByName.get('Cancellation Refund');
+                    PricebookEntry refundPBE = originalProgramFeePBE;
+                    if (refundPBE == null) {
+                        refundPBE = pbeByName.get('Cancellation Refund');
+                    }
                     if (refundPBE == null) {
                         refundPBE = pbeByName.get('ProgramFee');
                     }
@@ -1162,7 +1242,10 @@ public with sharing class TransferRegistrationController {
 
                 } else if (request.settlementType == 'Unapplied Funds') {
                     // Create "Move to Unapplied Funds" line item
-                    PricebookEntry unappliedPBE = pbeByName.get('Transfer to Unapplied Funds');
+                    PricebookEntry unappliedPBE = originalProgramFeePBE;
+                    if (unappliedPBE == null) {
+                        unappliedPBE = pbeByName.get('Transfer to Unapplied Funds');
+                    }
                     if (unappliedPBE == null) {
                         unappliedPBE = pbeByName.get('ProgramFee');
                     }
@@ -1340,13 +1423,15 @@ public with sharing class TransferRegistrationController {
             }
             Contact substituteContact = contactList[0];
 
-            // ── QUERY 4: Original Program Fee OLIs ─────────────────
+            // ── QUERY 4: Original Program Fee OLIs (exclude reversal lines; consistent ordering)
             List<OpportunityLineItem> originalProgramFees = [
                 SELECT Id, PricebookEntryId, Product2Id, Product2.Name,
                        UnitPrice, Quantity, TotalPrice, Description
                 FROM OpportunityLineItem
                 WHERE OpportunityId = :originalOpp.Id
                   AND Product_Family__c = 'Program Fee'
+                  AND (Reverse_Product_Line_Item__c = false OR Reverse_Product_Line_Item__c = null)
+                ORDER BY CreatedDate ASC
                 LIMIT 1
             ];
 
@@ -1373,10 +1458,28 @@ public with sharing class TransferRegistrationController {
                 ];
                 for (PricebookEntry pbe : allPBEs) {
                     pbeByName.put(pbe.Product2.Name, pbe);
-                    if (pbe.Product2.Family == 'Program Fee') {
+                    if (pbe.Product2.Family == 'Program Fee' && !pbeByName.containsKey('ProgramFee')) {
                         pbeByName.put('ProgramFee', pbe);
                     }
                 }
+            }
+
+            // Substituted-Out credit must use the same product as the registration fee line when possible
+            PricebookEntry substitutedOutCreditPBE = null;
+            if (!originalProgramFees.isEmpty() && originalProgramFees[0].PricebookEntryId != null) {
+                List<PricebookEntry> subFeePbeVerify = [
+                    SELECT Id
+                    FROM PricebookEntry
+                    WHERE Id = :originalProgramFees[0].PricebookEntryId
+                      AND IsActive = true
+                    LIMIT 1
+                ];
+                if (!subFeePbeVerify.isEmpty()) {
+                    substitutedOutCreditPBE = subFeePbeVerify[0];
+                }
+            }
+            if (substitutedOutCreditPBE == null) {
+                substitutedOutCreditPBE = pbeByName.get('ProgramFee');
             }
 
             // ════════════════════════════════════════════════════════
@@ -1452,13 +1555,12 @@ public with sharing class TransferRegistrationController {
             // 5. Create Line Items
             List<OpportunityLineItem> olisToInsert = new List<OpportunityLineItem>();
 
-            // 5a. "Substituted Out" credit line item on original Opp
+            // 5a. "Substituted Out" credit line item on original Opp (PBE from original program fee line when available)
             if (oppAmount > 0) {
-                PricebookEntry creditPBE = pbeByName.get('ProgramFee');
-                if (creditPBE != null) {
+                if (substitutedOutCreditPBE != null) {
                     OpportunityLineItem creditOLI = new OpportunityLineItem();
                     creditOLI.OpportunityId = originalOpp.Id;
-                    creditOLI.PricebookEntryId = creditPBE.Id;
+                    creditOLI.PricebookEntryId = substitutedOutCreditPBE.Id;
                     creditOLI.Quantity = 1;
                     creditOLI.UnitPrice = -oppAmount;
                     creditOLI.Description = 'Substituted Out';

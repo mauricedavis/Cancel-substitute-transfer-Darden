@@ -270,6 +270,12 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         return CURRENCY_FORMATTER.format(this.cancellationRefundAmount);
     }
 
+    /** Net registration (Opportunity.Amount); matches executeCancellation credit line UnitPrice. */
+    get formattedCancellationCredit() {
+        const oppAmount = this.initData?.originalOpp?.Amount || 0;
+        return CURRENCY_FORMATTER.format(-oppAmount);
+    }
+
     get cancelSettlementDescription() {
         if (this.cancelSettlementType === 'Refund') {
             return 'A Task will be created to process the refund for ' + this.formattedCancellationRefund + '.';
