@@ -422,8 +422,23 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         return CURRENCY_FORMATTER.format(this.transferFeeAmount || 0);
     }
 
+    /**
+     * Net original registration (program fee line totals + discount line totals).
+     * Matches executeTransfer credit base; prefers Apex-computed originalNetRegistrationAmount.
+     */
+    get originalNetRegistrationAmount() {
+        const d = this.initData;
+        if (!d) return 0;
+        if (d.originalNetRegistrationAmount != null && d.originalNetRegistrationAmount !== undefined) {
+            return Number(d.originalNetRegistrationAmount);
+        }
+        const fee = Number(d.originalProgramFeeTotal) || 0;
+        const disc = Number(d.discountTotal) || 0;
+        return fee + disc;
+    }
+
     get formattedCreditAmount() {
-        return CURRENCY_FORMATTER.format(-(this.initData?.originalProgramFeeTotal || 0));
+        return CURRENCY_FORMATTER.format(-this.originalNetRegistrationAmount);
     }
 
     get formattedDiscountAmount() {
@@ -437,9 +452,8 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
     }
 
     get netCreditAmount() {
-        const originalFee = this.initData?.originalProgramFeeTotal || 0;
-        const transferFee = this.applyTransferFee ? (this.transferFeeAmount || 0) : 0;
-        return originalFee - transferFee;
+        const transferFee = this.applyTransferFee ? (Number(this.transferFeeAmount) || 0) : 0;
+        return this.originalNetRegistrationAmount - transferFee;
     }
 
     get showSettlementInfo() {

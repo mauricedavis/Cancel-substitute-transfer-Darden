@@ -46,6 +46,8 @@ public with sharing class TransferRegistrationController {
         @AuraEnabled public List<evt__Special_Event__c> availablePrograms;
         @AuraEnabled public Decimal originalProgramFeeTotal;
         @AuraEnabled public Decimal discountTotal;
+        /** Net registration on original opp: sum(Program Fee TotalPrice) + sum(Discount TotalPrice). */
+        @AuraEnabled public Decimal originalNetRegistrationAmount;
         @AuraEnabled public String contactId;
         @AuraEnabled public String accountId;
     }
@@ -212,6 +214,7 @@ public with sharing class TransferRegistrationController {
                 data.discountTotal += oli.TotalPrice;
             }
         }
+        data.originalNetRegistrationAmount = data.originalProgramFeeTotal + data.discountTotal;
 
         data.availablePrograms = [
             SELECT Id, Name, evt__Start__c, evt__End__c,
@@ -541,17 +544,26 @@ public with sharing class TransferRegistrationController {
                 }
             }
 
-            // 1. Credit line item to offset original program fee
+            Decimal originalDiscountTotal = 0;
+            for (OpportunityLineItem oli : originalDiscountOLIs) {
+                if (oli.TotalPrice != null) {
+                    originalDiscountTotal += oli.TotalPrice;
+                }
+            }
+            // Net amount the registrant owed for program + discounts (discount lines are typically negative).
+            Decimal netOriginalRegistration = originalFeeTotal + originalDiscountTotal;
+
+            // 1. Credit line item to offset net original registration (not gross program fee alone)
             List<OpportunityLineItem> olisToInsert = new List<OpportunityLineItem>();
 
-            if (originalFeeTotal > 0 && !originalProgramFees.isEmpty()) {
+            if (netOriginalRegistration > 0 && !originalProgramFees.isEmpty()) {
                 OpportunityLineItem creditOLI = new OpportunityLineItem();
                 creditOLI.OpportunityId = originalOpp.Id;
                 creditOLI.PricebookEntryId = originalProgramFees[0].PricebookEntryId;
                 creditOLI.Quantity = 1;
-                creditOLI.UnitPrice = -originalFeeTotal;
+                creditOLI.UnitPrice = -netOriginalRegistration;
                 creditOLI.Reverse_Product_Line_Item__c = true;
-                creditOLI.Internal_Comments__c = 'Transfer credit - offsets original program fee';
+                creditOLI.Internal_Comments__c = 'Transfer credit - offsets net original registration (program fee less discounts)';
                 olisToInsert.add(creditOLI);
             }
 
@@ -855,9 +867,7 @@ public with sharing class TransferRegistrationController {
                 : (request.applyTransferFee && pbeByKey.containsKey('TransferFee') ? pbeByKey.get('TransferFee').UnitPrice : 0);
             Decimal netCredit = 0;
             if (String.isNotBlank(request.settlementType)) {
-                Decimal transferFeeAmount = (request.applyTransferFee && pbeByKey.containsKey('TransferFee'))
-                    ? pbeByKey.get('TransferFee').UnitPrice : 0;
-                netCredit = originalFeeTotal - transferFeeAmount;
+                netCredit = netOriginalRegistration - actualTransferFee;
             }
 
             // 11. Settlement Handling — Unapplied Funds stays in main tx (no Payment Master trigger)

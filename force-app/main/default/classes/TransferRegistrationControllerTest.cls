@@ -199,6 +199,7 @@ private class TransferRegistrationControllerTest {
         System.assertNotEquals(null, initData.originalOpp, 'Original Opp should be loaded');
         System.assertEquals(1, initData.programFeeLineItems.size(), 'Should have 1 program fee line item');
         System.assertEquals(9950, initData.originalProgramFeeTotal, 'Program fee total should be 9950');
+        System.assertEquals(9950, initData.originalNetRegistrationAmount, 'Net registration should match fee when no discount lines');
     }
 
     @IsTest
@@ -551,6 +552,62 @@ private class TransferRegistrationControllerTest {
             subOutLine.PricebookEntryId,
             'Substituted-Out line should use original program fee PricebookEntry'
         );
+    }
+
+    /**
+     * Transfer credit on original opp must reverse net registration (program fee + discount OLIs), not gross fee only.
+     */
+    @IsTest
+    static void testExecuteTransferCreditNetsOriginalDiscount() {
+        bypassAllDlrsRollups();
+
+        TestContext ctx = loadContext();
+        Id attId = insertAttendee(ctx);
+
+        PricebookEntry discountPbe = [
+            SELECT Id FROM PricebookEntry WHERE Product2.Name = 'Early Bird Discount' LIMIT 1
+        ];
+        insert new OpportunityLineItem(
+            OpportunityId = ctx.originalOppId,
+            PricebookEntryId = discountPbe.Id,
+            Quantity = 1,
+            UnitPrice = -500
+        );
+
+        Decimal expectedNet = 9950 - 500;
+
+        TransferRegistrationController.TransferRequest request = new TransferRegistrationController.TransferRequest();
+        request.attendeeId = attId;
+        request.originalOppId = ctx.originalOppId;
+        request.newSpecialEventId = ctx.newProgramId;
+        request.applyTransferFee = false;
+        request.settlementType = '';
+        request.applyDiscount = false;
+        request.sameProgramTransfer = false;
+        request.newProgramFeeAmount = 12500;
+        request.regChangeComments = 'Unit test transfer credit nets discount';
+
+        Test.startTest();
+        TransferRegistrationController.InitData initData =
+            TransferRegistrationController.getInitData(attId);
+        System.assertEquals(expectedNet, initData.originalNetRegistrationAmount, 'InitData net should include discount lines');
+
+        TransferRegistrationController.TransferResult result =
+            TransferRegistrationController.executeTransfer(request);
+        Test.stopTest();
+
+        String err = result.errorMessage == null ? '' : result.errorMessage;
+        System.assertEquals(true, result.success, 'Transfer should succeed: ' + err);
+
+        OpportunityLineItem creditLine = [
+            SELECT UnitPrice, Internal_Comments__c, PricebookEntryId
+            FROM OpportunityLineItem
+            WHERE OpportunityId = :ctx.originalOppId
+              AND Reverse_Product_Line_Item__c = true
+              AND Internal_Comments__c = 'Transfer credit - offsets net original registration (program fee less discounts)'
+            LIMIT 1
+        ];
+        System.assertEquals(-expectedNet, creditLine.UnitPrice, 'Credit should be negative net registration, not negative gross fee');
     }
 
     /**
