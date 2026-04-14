@@ -490,6 +490,7 @@ private class TransferRegistrationControllerTest {
         request.substituteContactId = ctx.contactId;
         request.applyDiscount = false;
         request.substitutionComments = 'Unit test basic substitution';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
 
         Test.startTest();
         TransferRegistrationController.SubstitutionResult result =
@@ -530,6 +531,7 @@ private class TransferRegistrationControllerTest {
         request.substituteContactId = ctx.contactId;
         request.applyDiscount = false;
         request.substitutionComments = 'Unit test substitution PBE mapping';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
 
         Test.startTest();
         TransferRegistrationController.SubstitutionResult result =

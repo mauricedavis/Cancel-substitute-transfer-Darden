@@ -125,6 +125,7 @@ public with sharing class TransferRegistrationController {
         @AuraEnabled public Id substituteContactId { get; set; }
         @AuraEnabled public Boolean applyDiscount { get; set; }
         @AuraEnabled public String substitutionComments { get; set; }
+        @AuraEnabled public String reasonLost { get; set; }
     }
 
     public class SubstitutionResult {
@@ -1583,6 +1584,10 @@ public with sharing class TransferRegistrationController {
                 substitutedOutCreditPBE = pbeByName.get('ProgramFee');
             }
 
+            if (opportunityHasReasonLostField() && String.isBlank(request.reasonLost)) {
+                throw new AuraHandledException('Reason Lost is required to substitute this registration.');
+            }
+
             // ════════════════════════════════════════════════════════
             // DML PHASE
             // ════════════════════════════════════════════════════════
@@ -1651,6 +1656,7 @@ public with sharing class TransferRegistrationController {
             originalOpp.Reg_Change_New_Opportunity__c = newOpp.Id;
             originalOpp.Registration_Change_Type__c = 'Substituted Out';
             originalOpp.Reg_Change_Comments__c = request.substitutionComments;
+            applyReasonLostToOpportunity(originalOpp, request.reasonLost);
             update originalOpp;
 
             // 5. Create Line Items

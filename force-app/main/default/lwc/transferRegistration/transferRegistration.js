@@ -109,6 +109,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
     @track selectedContact = null;
     @track applySubstitutionDiscount = true;
     @track substitutionComments = '';
+    @track substitutionReasonLost = '';
     @track substitutionResult = {};
     @track isSearchingContacts = false;
 
@@ -234,7 +235,8 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
             return !this.cancelSettlementType;
         }
         if (this.isSubstitutionStep1) {
-            return !this.selectedContact;
+            const reasonMissing = !String(this.substitutionReasonLost || '').trim();
+            return !this.selectedContact || reasonMissing;
         }
         return false;
     }
@@ -288,6 +290,13 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
 
     get formattedCancellationReasonLostDisplay() {
         const v = String(this.cancellationReasonLost || '').trim();
+        if (!v) return '';
+        const opt = this.reasonLostOptions?.find((o) => o.value === v);
+        return opt ? opt.label : v;
+    }
+
+    get formattedSubstitutionReasonLostDisplay() {
+        const v = String(this.substitutionReasonLost || '').trim();
         if (!v) return '';
         const opt = this.reasonLostOptions?.find((o) => o.value === v);
         return opt ? opt.label : v;
@@ -636,6 +645,11 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         this.substitutionComments = event.target.value;
     }
 
+    handleSubstitutionReasonLostChange(event) {
+        const v = event.detail?.value !== undefined ? event.detail.value : (event.target?.value ?? '');
+        this.substitutionReasonLost = v;
+    }
+
     // ═══════════════ NAVIGATION ═══════════════
 
     async handleNext() {
@@ -715,6 +729,10 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
                     this.showToast('Error', 'Please select a substitute contact.', 'error');
                     return;
                 }
+                if (!String(this.substitutionReasonLost || '').trim()) {
+                    this.showToast('Error', 'Reason Lost is required.', 'error');
+                    return;
+                }
                 this.currentStep = '2';
             }
         }
@@ -767,6 +785,7 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
         this.selectedContact = null;
         this.applySubstitutionDiscount = true;
         this.substitutionComments = '';
+        this.substitutionReasonLost = '';
         this.substitutionResult = {};
         this.isSearchingContacts = false;
         this.isProcessing = false;
@@ -970,12 +989,19 @@ export default class TransferRegistration extends NavigationMixin(LightningEleme
                 return;
             }
 
+            if (!String(this.substitutionReasonLost || '').trim()) {
+                this.showToast('Error', 'Reason Lost is required.', 'error');
+                this.isProcessing = false;
+                return;
+            }
+
             const request = {
                 attendeeId: attendeeId,
                 originalOppId: this.initData.originalOpp.Id,
                 substituteContactId: this.selectedContact.id,
                 applyDiscount: this.hasOriginalDiscount ? this.applySubstitutionDiscount : false,
-                substitutionComments: this.substitutionComments || ''
+                substitutionComments: this.substitutionComments || '',
+                reasonLost: String(this.substitutionReasonLost || '').trim()
             };
 
             const result = await executeSubstitution({ request: request });

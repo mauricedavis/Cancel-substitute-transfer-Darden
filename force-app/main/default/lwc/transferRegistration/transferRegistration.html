@@ -835,6 +835,31 @@
                 </div>
             </template>
 
+            <template lwc:if={hasPicklistReasonLostOptions}>
+                <lightning-combobox
+                    name="substitutionReasonLost"
+                    label="Reason Lost"
+                    value={substitutionReasonLost}
+                    placeholder="Select a reason"
+                    options={reasonLostOptions}
+                    onchange={handleSubstitutionReasonLostChange}
+                    required
+                    message-when-value-missing="Complete this field."
+                    class="slds-m-bottom_medium">
+                </lightning-combobox>
+            </template>
+            <template lwc:else>
+                <lightning-textarea
+                    label="Reason Lost"
+                    value={substitutionReasonLost}
+                    onchange={handleSubstitutionReasonLostChange}
+                    required
+                    max-length="4000"
+                    message-when-value-missing="Complete this field."
+                    class="slds-m-bottom_medium">
+                </lightning-textarea>
+            </template>
+
             <div class="slds-form-element">
                 <label class="slds-form-element__label custom-label-white">Substitution Request Comments</label>
                 <div class="slds-form-element__control">
@@ -899,6 +924,13 @@
                         </tr>
                     </tbody>
                 </table>
+
+                <template lwc:if={formattedSubstitutionReasonLostDisplay}>
+                    <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
+                        <div class="section-header slds-m-bottom_xx-small">Reason Lost</div>
+                        <div class="slds-text-body_small">{formattedSubstitutionReasonLostDisplay}</div>
+                    </div>
+                </template>
 
                 <template lwc:if={substitutionComments}>
                     <div class="slds-box slds-box_xx-small slds-theme_default slds-m-bottom_medium">
