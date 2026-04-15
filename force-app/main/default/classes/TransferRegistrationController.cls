@@ -1640,13 +1640,9 @@ public with sharing class TransferRegistrationController {
             result.newOpportunityId = newOpp.Id;
             result.newOpportunityName = newOpp.Name;
 
-            // 3. Create OpportunityContactRole
-            OpportunityContactRole ocr = new OpportunityContactRole();
-            ocr.OpportunityId = newOpp.Id;
-            ocr.ContactId = request.substituteContactId;
-            ocr.Role = 'Participant';
-            ocr.IsPrimary = true;
-            insert ocr;
+            // 3. Do not insert OpportunityContactRole here: ContactId + Primary_Contact__c already
+            //    establish the primary contact, and Salesforce auto-creates a contact role — a manual
+            //    Participant OCR duplicates the substitute on the Contact Roles related list.
 
             // 4. Update original Opportunity
             originalOpp.StageName = 'Closed Lost';
@@ -1721,20 +1717,50 @@ public with sharing class TransferRegistrationController {
             newOpp.Attendee__c = newAttendee.Id;
             update newOpp;
 
-            // 7. Payment handling - for standalone registrations
+            // 7. Payment handling — standalone: match executeTransfer (move Completed when paid, and
+            //    any non-Completed rows e.g. In Process / Scheduled). Defer DML via @future to reduce
+            //    Payment Master / flow SOQL limits (same pattern as transfer).
             if (originalOpp.Has_Parent_Opportunity__c != 'Yes') {
-                // Move completed payments to new Opp
-                List<pymt__PaymentX__c> completedPayments = [
-                    SELECT Id, pymt__Opportunity__c
+                List<pymt__PaymentX__c> sourcePayments = [
+                    SELECT Id, pymt__Status__c
                     FROM pymt__PaymentX__c
                     WHERE pymt__Opportunity__c = :originalOpp.Id
-                      AND pymt__Status__c = 'Completed'
                 ];
-                for (pymt__PaymentX__c pmt : completedPayments) {
-                    pmt.pymt__Opportunity__c = newOpp.Id;
+                Boolean hasPaidPayments = originalOpp.Total_Paid__c != null && originalOpp.Total_Paid__c > 0;
+                List<Id> paymentIdsToMove = new List<Id>();
+                for (pymt__PaymentX__c pmt : sourcePayments) {
+                    if (pmt.pymt__Status__c == 'Completed' && hasPaidPayments) {
+                        paymentIdsToMove.add(pmt.Id);
+                    } else if (pmt.pymt__Status__c != 'Completed') {
+                        paymentIdsToMove.add(pmt.Id);
+                    }
                 }
-                if (!completedPayments.isEmpty()) {
-                    update completedPayments;
+
+                Decimal newOppTotal = 0;
+                if (!originalProgramFees.isEmpty()) {
+                    Decimal feeU = originalProgramFees[0].UnitPrice;
+                    newOppTotal += feeU != null ? feeU : 0;
+                }
+                if (request.applyDiscount && !originalDiscounts.isEmpty()) {
+                    Decimal discU = originalDiscounts[0].UnitPrice;
+                    newOppTotal += discU != null ? discU : 0;
+                }
+
+                if (!paymentIdsToMove.isEmpty()) {
+                    deferTransferPaymentUpdates(
+                        paymentIdsToMove,
+                        newOpp.Id,
+                        newOppTotal,
+                        originalOpp.Id,
+                        originalOpp.Name,
+                        request.substituteContactId,
+                        originalOpp.AccountId,
+                        false,
+                        0,
+                        false,
+                        0,
+                        originalOpp.Invoice__c != null
+                    );
                 }
 
                 // Update Invoice to point to new Opp
