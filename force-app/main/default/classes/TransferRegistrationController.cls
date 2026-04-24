@@ -1610,7 +1610,9 @@ public with sharing class TransferRegistrationController {
             newOpp.EE_Program__c = originalOpp.EE_Program__c;
             newOpp.Special_Event__c = originalOpp.Special_Event__c;
             newOpp.Parent_Opportunity__c = originalOpp.Parent_Opportunity__c;
-            newOpp.Invoice__c = originalOpp.Invoice__c;
+            // Do not set Invoice__c on insert: the running user may lack rights to that Invoice record
+            // (INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY). Re-link after the Invoice row is
+            // moved/updated in section 7, same as executeTransfer (which never prepopulates Invoice on insert).
             newOpp.Invoice_Auto_Number__c = originalOpp.Invoice_Auto_Number__c;
             newOpp.FA_Response_Id__c = originalOpp.FA_Response_Id__c;
             newOpp.Payment_Status__c = originalOpp.Payment_Status__c;
@@ -1763,7 +1765,7 @@ public with sharing class TransferRegistrationController {
                     );
                 }
 
-                // Update Invoice to point to new Opp
+                // Update Invoice to point to new Opp, then set Opportunity.Invoice__c
                 if (originalOpp.Invoice__c != null) {
                     List<Invoice__c> invoices = [
                         SELECT Id, Opportunity__c
@@ -1771,15 +1773,26 @@ public with sharing class TransferRegistrationController {
                         WHERE Opportunity__c = :originalOpp.Id
                         LIMIT 1
                     ];
+                    if (invoices.isEmpty()) {
+                        invoices = [
+                            SELECT Id, Opportunity__c
+                            FROM Invoice__c
+                            WHERE Id = :originalOpp.Invoice__c
+                            LIMIT 1
+                        ];
+                    }
                     if (!invoices.isEmpty()) {
                         invoices[0].Opportunity__c = newOpp.Id;
                         update invoices;
-                    }
 
-                    // Set flags to generate new invoice
-                    newOpp.Invoice_Created__c = Date.today();
-                    newOpp.Set_Create_Invoice__c = true;
-                    update newOpp;
+                        // Re-point the new opp to the (moved) invoice after the child invoice row is
+                        // updated, so the running user is not asked to set Invoice on a brand-new opp
+                        // insert (avoids cross-reference / sharing edge cases in prod).
+                        newOpp.Invoice__c = invoices[0].Id;
+                        newOpp.Invoice_Created__c = Date.today();
+                        newOpp.Set_Create_Invoice__c = true;
+                        update newOpp;
+                    }
                 }
             } else {
                 // Bundled registration - set Revise_Invoice on parent
