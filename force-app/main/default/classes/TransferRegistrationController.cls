@@ -1601,20 +1601,24 @@ public with sharing class TransferRegistrationController {
 
             // 2. Create new Opportunity for substitute
             Opportunity newOpp = new Opportunity();
-            newOpp.AccountId = originalOpp.AccountId;
-            newOpp.OwnerId = originalOpp.OwnerId;
+            // Align Account with the substitute’s Contact so Contact/Account rules and sharing match the new primary.
+            newOpp.AccountId = substituteContact.AccountId != null
+                ? substituteContact.AccountId
+                : originalOpp.AccountId;
+            // The acting user may not be allowed to assign a brand-new row to the original opportunity owner
+            // (INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY on Owner). Own the new registration as the current user.
+            newOpp.OwnerId = UserInfo.getUserId();
             newOpp.RecordTypeId = originalOpp.RecordTypeId;
             newOpp.Pricebook2Id = originalOpp.Pricebook2Id;
             newOpp.CloseDate = originalOpp.CloseDate;
             newOpp.StageName = originalOpp.StageName;
             newOpp.EE_Program__c = originalOpp.EE_Program__c;
             newOpp.Special_Event__c = originalOpp.Special_Event__c;
-            newOpp.Parent_Opportunity__c = originalOpp.Parent_Opportunity__c;
             // Do not set Invoice__c on insert: the running user may lack rights to that Invoice record
             // (INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY). Re-link after the Invoice row is
             // moved/updated in section 7, same as executeTransfer (which never prepopulates Invoice on insert).
             newOpp.Invoice_Auto_Number__c = originalOpp.Invoice_Auto_Number__c;
-            newOpp.FA_Response_Id__c = originalOpp.FA_Response_Id__c;
+            // Do not copy Form Assembly / response lookups — often restricted or wrong for a new "Substituted In" row.
             newOpp.Payment_Status__c = originalOpp.Payment_Status__c;
             newOpp.Total_Paid__c = originalOpp.Total_Paid__c;
             newOpp.pymt__Number_of_Payments_Made__c = originalOpp.pymt__Number_of_Payments_Made__c;
@@ -1627,7 +1631,6 @@ public with sharing class TransferRegistrationController {
             newOpp.Reg_Change_Date__c = Date.today();
             newOpp.Reg_Change_Processed_By__c = UserInfo.getUserId();
             newOpp.Reg_Change_Comments__c = request.substitutionComments;
-            newOpp.Reg_Change_Original_Opportunity__c = originalOpp.Id;
 
             String oppName = '';
             if (originalOpp.Program_Acronym__c != null) {
@@ -1637,7 +1640,12 @@ public with sharing class TransferRegistrationController {
             oppName += substituteContact.LastName != null ? substituteContact.LastName : '';
             newOpp.Name = oppName.trim();
 
+            // Minimal insert, then set lookups that sometimes fail with cross-reference (owner already handled above).
             insert newOpp;
+
+            newOpp.Parent_Opportunity__c = originalOpp.Parent_Opportunity__c;
+            newOpp.Reg_Change_Original_Opportunity__c = originalOpp.Id;
+            update newOpp;
 
             result.newOpportunityId = newOpp.Id;
             result.newOpportunityName = newOpp.Name;
