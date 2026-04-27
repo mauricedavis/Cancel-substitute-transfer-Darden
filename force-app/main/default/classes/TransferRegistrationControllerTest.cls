@@ -734,4 +734,26 @@ private class TransferRegistrationControllerTest {
 
         System.assert(results.size() >= 1, 'Should find Doe when no account filter');
     }
+
+    @IsTest
+    static void testTransferRegSubstDmlService_Coverage() {
+        TransferRegSubstDmlService.insertLineItemsForSubstitution(null);
+        TransferRegSubstDmlService.insertLineItemsForSubstitution(
+            new List<OpportunityLineItem>()
+        );
+
+        try {
+            TransferRegSubstDmlService.updateOriginalOpportunitySubstitutedOut(null);
+            System.assert(false, 'expected AuraHandledException');
+        } catch (AuraHandledException e) {
+            System.assert(e.getMessage() != null);
+        }
+
+        try {
+            TransferRegSubstDmlService.updateOriginalOpportunitySubstitutedOut(new Opportunity());
+            System.assert(false, 'expected AuraHandledException');
+        } catch (AuraHandledException e) {
+            System.assert(e.getMessage() != null);
+        }
+    }
 }
