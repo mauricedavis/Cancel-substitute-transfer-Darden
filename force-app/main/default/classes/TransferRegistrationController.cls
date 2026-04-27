@@ -1382,6 +1382,63 @@ public with sharing class TransferRegistrationController {
     }
 
     /**
+     * Field-level check before close-out of the source registration. Substitution
+     * sets more fields and a different stage than executeTransfer
+     * (e.g. Closed Lost, Substituted_Participant, Reason_Lost). If transfer
+     * works for a user but substitution does not, compare FLS on those fields.
+     */
+    private static void assertOpportunityFieldsUpdateableForSubstitutedOut(String reasonLost) {
+        if (!Schema.sObjectType.Opportunity.isUpdateable()) {
+            throw new AuraHandledException(
+                'Your user profile does not have permission to update opportunities. A Salesforce admin can add Edit on Opportunity or grant a permission set for substitution.'
+            );
+        }
+        Set<String> tokens = new Set<String>{
+            'StageName',
+            'Substituted_Participant__c',
+            'Reg_Change_Date__c',
+            'Reg_Change_Processed_By__c',
+            'Reg_Change_New_Opportunity__c',
+            'Registration_Change_Type__c',
+            'Reg_Change_Comments__c'
+        };
+        if (String.isNotBlank(reasonLost) && opportunityHasReasonLostField()) {
+            String rl = resolveOpportunityFieldApiName(OPP_REASON_LOST_FIELD);
+            if (String.isNotBlank(rl)) {
+                tokens.add(rl);
+            }
+        }
+        Map<String, Schema.SObjectField> fm = Schema.SObjectType.Opportunity.fields.getMap();
+        for (String raw : tokens) {
+            if (String.isBlank(raw)) {
+                continue;
+            }
+            String key = null;
+            if (fm.containsKey(raw)) {
+                key = raw;
+            } else {
+                for (String k : fm.keySet()) {
+                    if (k != null && k.equalsIgnoreCase(raw)) {
+                        key = k;
+                        break;
+                    }
+                }
+            }
+            if (key == null) {
+                throw new AuraHandledException(
+                    'Substitution requires an Opportunity field that is not present in this org: ' + raw
+                );
+            }
+            if (!fm.get(key).getDescribe().isUpdateable()) {
+                throw new AuraHandledException(
+                    'Your user profile is not allowed to update field ' + key
+                        + ' on Opportunity. A Salesforce admin can open Field Accessibility for the Opportunity and grant Edit, or add a permission set for substitution users.'
+                );
+            }
+        }
+    }
+
+    /**
      * First active picklist value for Reason Lost, or a text placeholder — used by tests when the field exists.
      */
     @TestVisible
@@ -1654,7 +1711,10 @@ public with sharing class TransferRegistrationController {
             //    establish the primary contact, and Salesforce auto-creates a contact role — a manual
             //    Participant OCR duplicates the substitute on the Contact Roles related list.
 
-            // 4. Update original Opportunity
+            // 4. Update original Opportunity (Substituted Out)
+            // Row-level OWD sharing can block update with the controller's with sharing
+            // when the user is not the owner; DML is delegated to
+            // TransferRegistrationSubstitutionDmlService. FLS is checked first.
             originalOpp.StageName = 'Closed Lost';
             originalOpp.Substituted_Participant__c = request.substituteContactId;
             originalOpp.Reg_Change_Date__c = Date.today();
@@ -1663,7 +1723,10 @@ public with sharing class TransferRegistrationController {
             originalOpp.Registration_Change_Type__c = 'Substituted Out';
             originalOpp.Reg_Change_Comments__c = request.substitutionComments;
             applyReasonLostToOpportunity(originalOpp, request.reasonLost);
-            update originalOpp;
+            assertOpportunityFieldsUpdateableForSubstitutedOut(request.reasonLost);
+            TransferRegistrationSubstitutionDmlService.updateOriginalOpportunitySubstitutedOut(
+                originalOpp
+            );
 
             // 5. Create Line Items
             List<OpportunityLineItem> olisToInsert = new List<OpportunityLineItem>();
@@ -1706,7 +1769,14 @@ public with sharing class TransferRegistrationController {
             }
 
             if (!olisToInsert.isEmpty()) {
-                insert olisToInsert;
+                if (!Schema.sObjectType.OpportunityLineItem.isCreateable()) {
+                    throw new AuraHandledException(
+                        'Your user profile does not have permission to create opportunity line items. A Salesforce admin can add Create on Opportunity Product or grant a permission set for substitution.'
+                    );
+                }
+                TransferRegistrationSubstitutionDmlService.insertLineItemsForSubstitution(
+                    olisToInsert
+                );
             }
 
             // 6. Create new Attendee for substitute
