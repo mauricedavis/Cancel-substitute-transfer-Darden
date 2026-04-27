@@ -16,7 +16,7 @@
  * runbook: grant Edit on Opportunity and Edit FLS for Stage, Substituted_Participant,
  * Reg_Change* , and Reason_Lost (if used) to substitution user profiles/permission sets.
  */
-public without sharing class TransferRegistrationSubstitutionDmlService {
+public without sharing class TransferRegSubstDmlService {
 
     public static void updateOriginalOpportunitySubstitutedOut(Opportunity o) {
         if (o == null || o.Id == null) {

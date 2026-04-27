@@ -1714,7 +1714,7 @@ public with sharing class TransferRegistrationController {
             // 4. Update original Opportunity (Substituted Out)
             // Row-level OWD sharing can block update with the controller's with sharing
             // when the user is not the owner; DML is delegated to
-            // TransferRegistrationSubstitutionDmlService. FLS is checked first.
+            // TransferRegSubstDmlService. FLS is checked first.
             originalOpp.StageName = 'Closed Lost';
             originalOpp.Substituted_Participant__c = request.substituteContactId;
             originalOpp.Reg_Change_Date__c = Date.today();
@@ -1724,7 +1724,7 @@ public with sharing class TransferRegistrationController {
             originalOpp.Reg_Change_Comments__c = request.substitutionComments;
             applyReasonLostToOpportunity(originalOpp, request.reasonLost);
             assertOpportunityFieldsUpdateableForSubstitutedOut(request.reasonLost);
-            TransferRegistrationSubstitutionDmlService.updateOriginalOpportunitySubstitutedOut(
+            TransferRegSubstDmlService.updateOriginalOpportunitySubstitutedOut(
                 originalOpp
             );
 
@@ -1774,7 +1774,7 @@ public with sharing class TransferRegistrationController {
                         'Your user profile does not have permission to create opportunity line items. A Salesforce admin can add Create on Opportunity Product or grant a permission set for substitution.'
                     );
                 }
-                TransferRegistrationSubstitutionDmlService.insertLineItemsForSubstitution(
+                TransferRegSubstDmlService.insertLineItemsForSubstitution(
                     olisToInsert
                 );
             }
