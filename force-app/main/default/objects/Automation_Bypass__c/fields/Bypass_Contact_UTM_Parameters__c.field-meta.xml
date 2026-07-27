@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Bypass_Contact_UTM_Parameters__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>When true, the Contact: Update UTM Parameters for Non-MC Pages flow (triggered on Contact) exits immediately without running. Intended for use only within Apex test context.</description>
+    <externalId>false</externalId>
+    <label>Bypass Contact UTM Parameters</label>
+    <type>Checkbox</type>
+</CustomField>
