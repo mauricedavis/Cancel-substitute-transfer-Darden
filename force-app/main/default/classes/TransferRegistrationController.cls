@@ -1194,27 +1194,48 @@ public with sharing class TransferRegistrationController {
             List<OpportunityLineItem> olisToInsert = new List<OpportunityLineItem>();
 
             // 2a. Cancellation Fee line item (if applicable)
+            // Product must be 'Cancelation Fees' (org's actual spelling). We do NOT fall back to an
+            // arbitrary Program Fee PBE here -- that previously caused the fee to post against whatever
+            // Program Fee product SOQL happened to return first (e.g. a retired program), rather than
+            // the registrant's actual program. Fail loudly instead so it gets fixed at the source.
             if (request.applyCancellationFee && cancellationFee > 0) {
-                PricebookEntry cancelFeePBE = pbeByName.get('Cancellation Fee');
+                PricebookEntry cancelFeePBE = pbeByName.get('Cancelation Fees');
                 if (cancelFeePBE == null) {
-                    cancelFeePBE = pbeByName.get('ProgramFee');
+                    // AuraHandledException.getMessage() returns the generic "Script-thrown exception"
+                    // unless setMessage() is called explicitly -- without it, the caller (and this
+                    // catch block below) never sees the actual "Cancelation Fees" wording.
+                    AuraHandledException cancelFeeMissingEx = new AuraHandledException(
+                        'The "Cancelation Fees" product could not be found in this Opportunity\'s pricebook. Please contact your Salesforce admin before applying a cancellation fee.'
+                    );
+                    cancelFeeMissingEx.setMessage(
+                        'The "Cancelation Fees" product could not be found in this Opportunity\'s pricebook. Please contact your Salesforce admin before applying a cancellation fee.'
+                    );
+                    throw cancelFeeMissingEx;
                 }
-                if (cancelFeePBE != null) {
-                    OpportunityLineItem cancelFeeOLI = new OpportunityLineItem();
-                    cancelFeeOLI.OpportunityId = originalOpp.Id;
-                    cancelFeeOLI.PricebookEntryId = cancelFeePBE.Id;
-                    cancelFeeOLI.Quantity = 1;
-                    cancelFeeOLI.UnitPrice = cancellationFee;
-                    cancelFeeOLI.Description = 'Cancellation Fee';
-                    olisToInsert.add(cancelFeeOLI);
-                }
+                OpportunityLineItem cancelFeeOLI = new OpportunityLineItem();
+                cancelFeeOLI.OpportunityId = originalOpp.Id;
+                cancelFeeOLI.PricebookEntryId = cancelFeePBE.Id;
+                cancelFeeOLI.Quantity = 1;
+                cancelFeeOLI.UnitPrice = cancellationFee;
+                cancelFeeOLI.Description = 'Cancellation Fee';
+                olisToInsert.add(cancelFeeOLI);
             }
 
+            // A Refund or Unapplied Funds settlement (section 4 below) creates its own line for
+            // -(Amount - fee). Also creating this full -Amount credit would double-count the
+            // registration reversal (this was the root cause of Amount landing at fee - Amount
+            // instead of just fee). So: skip the full credit in that case, and instead only offset
+            // the fee itself (if any) so the settlement line's -(Amount - fee) is all that's left.
+            Boolean willSettleWithRefundOrUnapplied =
+                (originalOpp.Payment_Status__c == 'Paid' || originalOpp.Payment_Status__c == 'Partial Payment')
+                && refundAmount > 0
+                && (request.settlementType == 'Refund' || request.settlementType == 'Unapplied Funds');
+
             // 2b. Credit line item (negative amount = net registration / Opportunity.Amount)
-            if (oppAmount > 0) {
+            if (oppAmount > 0 && !willSettleWithRefundOrUnapplied) {
                 PricebookEntry creditPBE = originalProgramFeePBE;
                 if (creditPBE == null) {
-                    creditPBE = pbeByName.get('Cancellation Credit');
+                    creditPBE = pbeByName.get('Cancelation Credit');
                 }
                 if (creditPBE == null) {
                     creditPBE = pbeByName.get('ProgramFee');
@@ -1227,6 +1248,19 @@ public with sharing class TransferRegistrationController {
                     creditOLI.UnitPrice = -oppAmount;
                     creditOLI.Description = 'Cancellation Credit';
                     olisToInsert.add(creditOLI);
+                }
+            } else if (willSettleWithRefundOrUnapplied && cancellationFee > 0) {
+                // Offset just the fee portion that is being taken out of the existing payment, so the
+                // settlement line created below only needs to cover the remaining balance.
+                PricebookEntry feeCreditPBE = pbeByName.get('Cancelation Fee Payment Credit');
+                if (feeCreditPBE != null) {
+                    OpportunityLineItem feeCreditOLI = new OpportunityLineItem();
+                    feeCreditOLI.OpportunityId = originalOpp.Id;
+                    feeCreditOLI.PricebookEntryId = feeCreditPBE.Id;
+                    feeCreditOLI.Quantity = 1;
+                    feeCreditOLI.UnitPrice = -cancellationFee;
+                    feeCreditOLI.Description = 'Cancellation Fee Paid';
+                    olisToInsert.add(feeCreditOLI);
                 }
             }
 
@@ -1261,7 +1295,7 @@ public with sharing class TransferRegistrationController {
                     // Create refund line item
                     PricebookEntry refundPBE = originalProgramFeePBE;
                     if (refundPBE == null) {
-                        refundPBE = pbeByName.get('Cancellation Refund');
+                        refundPBE = pbeByName.get('Refund');
                     }
                     if (refundPBE == null) {
                         refundPBE = pbeByName.get('ProgramFee');
@@ -1276,20 +1310,30 @@ public with sharing class TransferRegistrationController {
                         insert refundOLI;
                     }
 
-                    // Create Task for refund processing
+                    // Create Task for refund processing.
+                    // This is a convenience reminder, not part of the financial transaction -- wrap it in
+                    // its own savepoint so a permission/sharing gap on the Payment record (e.g. missing
+                    // record-type visibility) can never roll back the cancellation itself.
                     if (!completedPayments.isEmpty()) {
-                        Task refundTask = new Task();
-                        refundTask.Subject = 'Process Refund of $' + String.valueOf(refundAmount);
-                        refundTask.Description = 'Please process the refund and update this task to complete.';
-                        refundTask.ActivityDate = Date.today();
-                        refundTask.OwnerId = UserInfo.getUserId();
-                        refundTask.Status = 'Not Started';
-                        refundTask.Type = 'Other';
-                        refundTask.WhatId = completedPayments[0].Id;
-                        insert refundTask;
+                        Savepoint taskSp = Database.setSavepoint();
+                        try {
+                            Task refundTask = new Task();
+                            refundTask.Subject = 'Process Refund of $' + String.valueOf(refundAmount);
+                            refundTask.Description = 'Please process the refund and update this task to complete.';
+                            refundTask.ActivityDate = Date.today();
+                            refundTask.OwnerId = UserInfo.getUserId();
+                            refundTask.Status = 'Not Started';
+                            refundTask.Type = 'Other';
+                            refundTask.WhatId = completedPayments[0].Id;
+                            insert refundTask;
 
-                        result.taskId = refundTask.Id;
-                        result.paymentId = completedPayments[0].Id;
+                            result.taskId = refundTask.Id;
+                            result.paymentId = completedPayments[0].Id;
+                        } catch (Exception taskEx) {
+                            Database.rollback(taskSp);
+                            result.paymentId = completedPayments[0].Id;
+                            result.errorMessage = 'Cancellation completed successfully, but the refund reminder task could not be created: ' + taskEx.getMessage();
+                        }
                     }
                     result.refundAmount = refundAmount;
 

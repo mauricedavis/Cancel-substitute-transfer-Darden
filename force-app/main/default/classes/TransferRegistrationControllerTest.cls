@@ -32,6 +32,17 @@ private class TransferRegistrationControllerTest {
 
     @TestSetup
     static void setupTestData() {
+        // Suppress SLX Attendee Sync and the Contact UTM Parameters flow for the duration of this
+        // test run. Both are real, unconditional-by-default production automations whose combined
+        // SOQL cost now exceeds the 100-query governor limit when triggered together (DARDENEXED-6).
+        // The bypass only takes effect because this org-default Automation_Bypass__c record is set;
+        // real user transactions never touch this setting and are completely unaffected.
+        upsert new Automation_Bypass__c(
+            SetupOwnerId = UserInfo.getOrganizationId(),
+            Bypass_SLX_Attendee_Sync__c = true,
+            Bypass_Contact_UTM_Parameters__c = true
+        );
+
         Account testAccount = new Account(Name = 'Test Corp');
         insert testAccount;
 
@@ -142,6 +153,10 @@ private class TransferRegistrationControllerTest {
             evt__Invitation_Status__c = 'Registered',
             Registration_Date__c      = Date.today().addDays(-30)
         );
+        // The automation this insert would otherwise trigger (SLX Attendee Sync -> Contact update ->
+        // "Contact: Update UTM Parameters for Non-MC Pages") is suppressed via the Automation_Bypass__c
+        // custom setting set in @TestSetup (DARDENEXED-6) -- no System.runAs isolation needed anymore,
+        // since the heavy cascade simply doesn't run during tests.
         insert att;
         return att.Id;
     }
@@ -471,6 +486,166 @@ private class TransferRegistrationControllerTest {
             creditLine.PricebookEntryId,
             'Credit line should use original program fee PricebookEntry'
         );
+    }
+
+    /**
+     * DARDENEXED-4 regression test: when a Refund settlement follows a cancellation fee, the final
+     * Opportunity.Amount must equal exactly the fee — not fee minus Amount (the double-counted bug
+     * that put Rose Lindsey's opportunity at -$3,250 instead of $1,000).
+     */
+    @IsTest
+    static void testExecuteCancellation_RefundSettlement_AmountEqualsFee() {
+        bypassAllDlrsRollups();
+
+        TestContext ctx = loadContext();
+        Id attId = insertAttendee(ctx);
+
+        Decimal originalAmount = 5250;
+        Decimal fee = 1000;
+
+        Opportunity oppToUpdate = [
+            SELECT Id, Amount, Payment_Status__c
+            FROM Opportunity
+            WHERE Id = :ctx.originalOppId
+            LIMIT 1
+        ];
+        oppToUpdate.Amount = originalAmount;
+        oppToUpdate.Payment_Status__c = 'Paid';
+        update oppToUpdate;
+
+        insert new pymt__PaymentX__c(
+            pymt__Opportunity__c = ctx.originalOppId,
+            pymt__Amount__c = originalAmount,
+            pymt__Status__c = 'Completed',
+            pymt__Date__c = Date.today().addDays(-5)
+        );
+
+        // Some org automation (e.g. a Payment-triggered Opportunity rollup) can recalculate
+        // Opportunity.Amount back to the sum of its OpportunityLineItems after the Payment insert
+        // above, overriding the value we set manually. Query what's actually active immediately
+        // before calling executeCancellation, same pattern as
+        // testExecuteCancellation_NetAmountUsesOriginalProgramFeePbe, so this assertion reflects
+        // reality rather than an assumption about which value survived.
+        Decimal amtAtRun = [SELECT Amount FROM Opportunity WHERE Id = :ctx.originalOppId LIMIT 1].Amount;
+
+        TransferRegistrationController.CancellationRequest request =
+            new TransferRegistrationController.CancellationRequest();
+        request.attendeeId = attId;
+        request.originalOppId = ctx.originalOppId;
+        request.applyCancellationFee = true;
+        request.cancellationFeeAmount = fee;
+        request.settlementType = 'Refund';
+        request.cancelComments = 'Unit test refund settlement amount math';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
+
+        Test.startTest();
+        TransferRegistrationController.CancellationResult result =
+            TransferRegistrationController.executeCancellation(request);
+        Test.stopTest();
+
+        System.assertEquals(true, result.success, 'Cancellation should succeed: ' + result.errorMessage);
+        System.assertEquals(amtAtRun - fee, result.refundAmount, 'Refund should equal Amount minus fee');
+
+        Opportunity finalOpp = [SELECT Amount FROM Opportunity WHERE Id = :ctx.originalOppId LIMIT 1];
+        System.assertEquals(fee, finalOpp.Amount, 'Opportunity.Amount after a Refund settlement must equal exactly the cancellation fee, not fee minus Amount');
+    }
+
+    /**
+     * Same regression as above, for the Unapplied Funds settlement path.
+     */
+    @IsTest
+    static void testExecuteCancellation_UnappliedFundsSettlement_AmountEqualsFee() {
+        bypassAllDlrsRollups();
+
+        TestContext ctx = loadContext();
+        Id attId = insertAttendee(ctx);
+
+        Decimal originalAmount = 5250;
+        Decimal fee = 1000;
+
+        Opportunity oppToUpdate = [
+            SELECT Id, Amount, Payment_Status__c
+            FROM Opportunity
+            WHERE Id = :ctx.originalOppId
+            LIMIT 1
+        ];
+        oppToUpdate.Amount = originalAmount;
+        oppToUpdate.Payment_Status__c = 'Paid';
+        update oppToUpdate;
+
+        insert new pymt__PaymentX__c(
+            pymt__Opportunity__c = ctx.originalOppId,
+            pymt__Amount__c = originalAmount,
+            pymt__Status__c = 'Completed',
+            pymt__Date__c = Date.today().addDays(-5)
+        );
+
+        TransferRegistrationController.CancellationRequest request =
+            new TransferRegistrationController.CancellationRequest();
+        request.attendeeId = attId;
+        request.originalOppId = ctx.originalOppId;
+        request.applyCancellationFee = true;
+        request.cancellationFeeAmount = fee;
+        request.settlementType = 'Unapplied Funds';
+        request.cancelComments = 'Unit test unapplied funds settlement amount math';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
+
+        Test.startTest();
+        TransferRegistrationController.CancellationResult result =
+            TransferRegistrationController.executeCancellation(request);
+        Test.stopTest();
+
+        System.assertEquals(true, result.success, 'Cancellation should succeed: ' + result.errorMessage);
+        System.assertNotEquals(null, result.unappliedFundsId, 'Unapplied Funds record should be created');
+
+        Opportunity finalOpp = [SELECT Amount FROM Opportunity WHERE Id = :ctx.originalOppId LIMIT 1];
+        System.assertEquals(fee, finalOpp.Amount, 'Opportunity.Amount after an Unapplied Funds settlement must equal exactly the cancellation fee, not fee minus Amount');
+    }
+
+    /**
+     * Missing 'Cancelation Fees' product must fail loudly rather than silently posting the fee
+     * against whatever Program Fee product happens to be returned first.
+     */
+    @IsTest
+    static void testExecuteCancellation_MissingCancelFeeProduct_Throws() {
+        bypassAllDlrsRollups();
+
+        // Deactivate the Cancelation Fees PBE so the lookup misses, simulating the misconfigured-org case.
+        PricebookEntry cancelFeePbeToDeactivate = [
+            SELECT Id FROM PricebookEntry WHERE Product2.Name = 'Cancelation Fees' LIMIT 1
+        ];
+        update new PricebookEntry(Id = cancelFeePbeToDeactivate.Id, IsActive = false);
+
+        TestContext ctx = loadContext();
+        Id attId = insertAttendee(ctx);
+
+        Opportunity oppToUpdate = [
+            SELECT Id, Amount, Payment_Status__c
+            FROM Opportunity
+            WHERE Id = :ctx.originalOppId
+            LIMIT 1
+        ];
+        oppToUpdate.Amount = 9950;
+        oppToUpdate.Payment_Status__c = 'Not Paid';
+        update oppToUpdate;
+
+        TransferRegistrationController.CancellationRequest request =
+            new TransferRegistrationController.CancellationRequest();
+        request.attendeeId = attId;
+        request.originalOppId = ctx.originalOppId;
+        request.applyCancellationFee = true;
+        request.cancellationFeeAmount = 500;
+        request.settlementType = null;
+        request.cancelComments = 'Unit test missing cancel fee product';
+        request.reasonLost = TransferRegistrationController.sampleReasonLostValueForTests();
+
+        Test.startTest();
+        TransferRegistrationController.CancellationResult result =
+            TransferRegistrationController.executeCancellation(request);
+        Test.stopTest();
+
+        System.assertEquals(false, result.success, 'Should fail loudly when Cancelation Fees product is unavailable');
+        System.assert(result.errorMessage.contains('Cancelation Fees'), 'Error should name the missing product: ' + result.errorMessage);
     }
 
     @IsTest
