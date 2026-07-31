@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>57.0</apiVersion>
+    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
+    <environments>Default</environments>
+    <formulas>
+        <name>increase</name>
+        <dataType>Number</dataType>
+        <expression>IF(ISNULL({!$Record.evt__Contact__r.of_attendee_syncs__c}), 1, {!$Record.evt__Contact__r.of_attendee_syncs__c} + 1)</expression>
+        <scale>2</scale>
+    </formulas>
+    <interviewLabel>SLX Attendee Sync {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>SLX Attendee Sync</label>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value>
+            <stringValue>AUTO_LAYOUT_CANVAS</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>OriginBuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processType>AutoLaunchedFlow</processType>
+    <recordUpdates>
+        <name>Update_Contact</name>
+        <label>Update Contact</label>
+        <locationX>176</locationX>
+        <locationY>335</locationY>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Id</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.evt__Contact__r.Id</elementReference>
+            </value>
+        </filters>
+        <inputAssignments>
+            <field>of_attendee_syncs__c</field>
+            <value>
+                <elementReference>increase</elementReference>
+            </value>
+        </inputAssignments>
+        <object>Contact</object>
+    </recordUpdates>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Update_Contact</targetReference>
+        </connector>
+        <!-- DARDENEXED-6: bypass this flow entirely when Automation_Bypass__c.Bypass_SLX_Attendee_Sync__c
+             is set. Only ever set inside Apex test context; real transactions are unaffected. -->
+        <filterFormula>NOT({!$Setup.Automation_Bypass__c.Bypass_SLX_Attendee_Sync__c})</filterFormula>
+        <object>evt__Attendee__c</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+</Flow>

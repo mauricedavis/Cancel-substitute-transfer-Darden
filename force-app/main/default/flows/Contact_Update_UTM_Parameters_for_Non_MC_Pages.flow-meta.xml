@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>61.0</apiVersion>
+    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
+    <decisions>
+        <name>Is_UTM_Campaign_populated</name>
+        <label>Is UTM Campaign populated?</label>
+        <locationX>182</locationX>
+        <locationY>623</locationY>
+        <defaultConnector>
+            <targetReference>Is_UTM_Source_populated</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>UTM Campaign is populated</defaultConnectorLabel>
+        <rules>
+            <name>No_UTM_Campaign_is_blank</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.utm_campaign__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>UTM_Campaign</targetReference>
+            </connector>
+            <label>No, UTM Campaign is blank</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <name>Is_UTM_Content_populated</name>
+        <label>Is UTM Content populated?</label>
+        <locationX>182</locationX>
+        <locationY>323</locationY>
+        <defaultConnector>
+            <targetReference>Is_UTM_Campaign_populated</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>UTM Content is populated</defaultConnectorLabel>
+        <rules>
+            <name>No_UTM_Content_is_blank</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.utm_content__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>UTM_Content</targetReference>
+            </connector>
+            <label>No, UTM Content is blank</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <name>Is_UTM_Medium_populated</name>
+        <label>Is UTM Medium populated?</label>
+        <locationX>182</locationX>
+        <locationY>1223</locationY>
+        <defaultConnectorLabel>UTM Medium is populated</defaultConnectorLabel>
+        <rules>
+            <name>No_UTM_Medium_is_blank</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.utm_medium__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>UTM_Medium</targetReference>
+            </connector>
+            <label>No, UTM Medium is blank</label>
+        </rules>
+    </decisions>
+    <decisions>
+        <name>Is_UTM_Source_populated</name>
+        <label>Is UTM Source populated?</label>
+        <locationX>182</locationX>
+        <locationY>923</locationY>
+        <defaultConnector>
+            <targetReference>Is_UTM_Medium_populated</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>UTM Source is populated</defaultConnectorLabel>
+        <rules>
+            <name>No_UTM_Source_is_blank</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.utm_source__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>UTM_Source</targetReference>
+            </connector>
+            <label>No, UTM Source is blank</label>
+        </rules>
+    </decisions>
+    <description>10/15/2024: &lt;MJD&gt; Added check to ensure that &apos;Page URL&apos; is not populated. Also, added check for &apos;Full FA URL&apos; for a question mark (?), as that would indicate UTM parameters to follow. 07/26/2026: &lt;MJD&gt; Added bypass check against Automation_Bypass__c custom setting for use by Apex tests (DARDENEXED-6).</description>
+    <environments>Default</environments>
+    <formulas>
+        <name>var_UTMCampaign</name>
+        <dataType>String</dataType>
+        <expression>IF(
+    CONTAINS({!$Record.Full_FA_URL__c}, &quot;utm_campaign=&quot;),
+    MID( 
+        {!$Record.Full_FA_URL__c},
+        FIND(&quot;utm_campaign=&quot;, {!$Record.Full_FA_URL__c}) + 13,
+        IF(
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_campaign=&quot;, {!$Record.Full_FA_URL__c}) + 13) &gt; 0,
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_campaign=&quot;, {!$Record.Full_FA_URL__c}) + 13) - FIND(&quot;utm_campaign=&quot;, {!$Record.Full_FA_URL__c}) - 13,
+            LEN({!$Record.Full_FA_URL__c}) - FIND(&quot;utm_campaign=&quot;, {!$Record.Full_FA_URL__c}) - 12
+        )
+    ),
+    &quot;&quot;
+)</expression>
+    </formulas>
+    <formulas>
+        <name>var_UTMContent</name>
+        <dataType>String</dataType>
+        <expression>IF(
+    CONTAINS({!$Record.Full_FA_URL__c}, &quot;utm_content=&quot;),
+    MID(
+        {!$Record.Full_FA_URL__c},
+        FIND(&quot;utm_content=&quot;, {!$Record.Full_FA_URL__c}) + 12,
+        IF(
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_content=&quot;, {!$Record.Full_FA_URL__c}) + 12) &gt; 0,
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_content=&quot;, {!$Record.Full_FA_URL__c}) + 12) - FIND(&quot;utm_content=&quot;, {!$Record.Full_FA_URL__c}) - 12,
+            LEN({!$Record.Full_FA_URL__c}) - FIND(&quot;utm_content=&quot;, {!$Record.Full_FA_URL__c}) - 11
+        )
+    ),
+    &quot;&quot;
+)</expression>
+    </formulas>
+    <formulas>
+        <name>var_UTMMedium</name>
+        <dataType>String</dataType>
+        <expression>IF(
+    CONTAINS({!$Record.Full_FA_URL__c}, &quot;utm_medium=&quot;),
+    MID(
+        {!$Record.Full_FA_URL__c},
+        FIND(&quot;utm_medium=&quot;, {!$Record.Full_FA_URL__c}) + 11,
+        IF(
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_medium=&quot;, {!$Record.Full_FA_URL__c}) + 11) &gt; 0,
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_medium=&quot;, {!$Record.Full_FA_URL__c}) + 11) - FIND(&quot;utm_medium=&quot;, {!$Record.Full_FA_URL__c}) - 11,
+            LEN({!$Record.Full_FA_URL__c}) - FIND(&quot;utm_medium=&quot;, {!$Record.Full_FA_URL__c}) - 10
+        )
+    ),
+    &quot;&quot;
+)</expression>
+    </formulas>
+    <formulas>
+        <name>var_UTMSource</name>
+        <dataType>String</dataType>
+        <expression>IF(
+    CONTAINS({!$Record.Full_FA_URL__c}, &quot;utm_source=&quot;),
+    MID(
+        {!$Record.Full_FA_URL__c},
+        FIND(&quot;utm_source=&quot;, {!$Record.Full_FA_URL__c}) + 11,
+        IF(
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_source=&quot;, {!$Record.Full_FA_URL__c}) + 11) &gt; 0,
+            FIND(&quot;&amp;&quot;, {!$Record.Full_FA_URL__c}, FIND(&quot;utm_source=&quot;, {!$Record.Full_FA_URL__c}) + 11) - FIND(&quot;utm_source=&quot;, {!$Record.Full_FA_URL__c}) - 11,
+            LEN({!$Record.Full_FA_URL__c}) - FIND(&quot;utm_source=&quot;, {!$Record.Full_FA_URL__c}) - 10
+        )
+    ),
+    &quot;&quot;
+)</expression>
+    </formulas>
+    <interviewLabel>Contact: Update UTM Parameters for Non-MC Pages {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Contact: Update UTM Parameters for Non-MC Pages</label>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value>
+            <stringValue>AUTO_LAYOUT_CANVAS</stringValue>
+        </value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>OriginBuilderType</name>
+        <value>
+            <stringValue>LightningFlowBuilder</stringValue>
+        </value>
+    </processMetadataValues>
+    <processType>AutoLaunchedFlow</processType>
+    <recordUpdates>
+        <name>UTM_Campaign</name>
+        <label>UTM Campaign</label>
+        <locationX>50</locationX>
+        <locationY>731</locationY>
+        <connector>
+            <targetReference>Is_UTM_Source_populated</targetReference>
+        </connector>
+        <inputAssignments>
+            <field>utm_campaign__c</field>
+            <value>
+                <elementReference>var_UTMCampaign</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record</inputReference>
+    </recordUpdates>
+    <recordUpdates>
+        <name>UTM_Content</name>
+        <label>UTM Content</label>
+        <locationX>50</locationX>
+        <locationY>431</locationY>
+        <connector>
+            <targetReference>Is_UTM_Campaign_populated</targetReference>
+        </connector>
+        <inputAssignments>
+            <field>utm_content__c</field>
+            <value>
+                <elementReference>var_UTMContent</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record</inputReference>
+    </recordUpdates>
+    <recordUpdates>
+        <name>UTM_Medium</name>
+        <label>UTM Medium</label>
+        <locationX>50</locationX>
+        <locationY>1331</locationY>
+        <inputAssignments>
+            <field>utm_medium__c</field>
+            <value>
+                <elementReference>var_UTMMedium</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record</inputReference>
+    </recordUpdates>
+    <recordUpdates>
+        <name>UTM_Source</name>
+        <label>UTM Source</label>
+        <locationX>50</locationX>
+        <locationY>1031</locationY>
+        <connector>
+            <targetReference>Is_UTM_Medium_populated</targetReference>
+        </connector>
+        <inputAssignments>
+            <field>utm_source__c</field>
+            <value>
+                <elementReference>var_UTMSource</elementReference>
+            </value>
+        </inputAssignments>
+        <inputReference>$Record</inputReference>
+    </recordUpdates>
+    <start>
+        <locationX>56</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Is_UTM_Content_populated</targetReference>
+        </connector>
+        <!-- DARDENEXED-6: original UTM-null trigger condition ANDed with the Automation_Bypass__c
+             check. Only ever set inside Apex test context; real transactions are unaffected. -->
+        <filterFormula>AND(
+    OR(
+        ISNULL({!$Record.utm_content__c}),
+        ISNULL({!$Record.utm_campaign__c}),
+        ISNULL({!$Record.utm_medium__c}),
+        ISNULL({!$Record.utm_source__c})
+    ),
+    NOT({!$Setup.Automation_Bypass__c.Bypass_Contact_UTM_Parameters__c})
+)</filterFormula>
+        <object>Contact</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+    <triggerOrder>500</triggerOrder>
+</Flow>
