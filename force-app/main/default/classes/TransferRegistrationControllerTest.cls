@@ -162,6 +162,40 @@ private class TransferRegistrationControllerTest {
     }
 
     /**
+     * Cancellation settlement products -- match the org's real product names exactly (see
+     * DARDENEXED-4: the controller previously used 'Cancellation Fee'/'Cancellation Credit'/
+     * 'Cancellation Refund', none of which exist in prod; the org's actual products are
+     * 'Cancelation Fees', 'Cancelation Credit', 'Cancelation Fee Payment Credit', 'Refund', and
+     * 'Transfer to Unapplied Funds').
+     *
+     * Created directly in the calling test method rather than @TestSetup: production validation
+     * surfaced that these specific records, when seeded via @TestSetup, were not reliably visible
+     * to a later test method's queries in that org (sandbox never showed this). Creating them in
+     * the same transaction/method where they're queried sidesteps the issue and is the more
+     * standard Apex testing pattern regardless of the underlying platform behavior (DARDENEXED-6
+     * follow-up).
+     */
+    private static void insertCancellationProducts() {
+        Id stdPricebookId = Test.getStandardPricebookId();
+        Id eeRecordTypeId = Schema.SObjectType.Product2.getRecordTypeInfosByName()
+            .get('EE Programs').getRecordTypeId();
+
+        Product2 cancelFeeProduct        = new Product2(Name = 'Cancelation Fees',                Family = 'Change Fees', IsActive = true, RecordTypeId = eeRecordTypeId);
+        Product2 cancelCreditProduct     = new Product2(Name = 'Cancelation Credit',               Family = 'Credits',     IsActive = true, RecordTypeId = eeRecordTypeId);
+        Product2 cancelFeeCreditProduct  = new Product2(Name = 'Cancelation Fee Payment Credit',    Family = 'Credits',     IsActive = true, RecordTypeId = eeRecordTypeId);
+        Product2 refundProduct           = new Product2(Name = 'Refund',                           Family = 'Credits',     IsActive = true, RecordTypeId = eeRecordTypeId);
+        Product2 unappliedProduct        = new Product2(Name = 'Transfer to Unapplied Funds',       Family = 'Credits',     IsActive = true, RecordTypeId = eeRecordTypeId);
+        insert new List<Product2>{ cancelFeeProduct, cancelCreditProduct, cancelFeeCreditProduct, refundProduct, unappliedProduct };
+
+        PricebookEntry cancelFeePBE       = new PricebookEntry(Pricebook2Id = stdPricebookId, Product2Id = cancelFeeProduct.Id,       UnitPrice = 1, IsActive = true);
+        PricebookEntry cancelCreditPBE    = new PricebookEntry(Pricebook2Id = stdPricebookId, Product2Id = cancelCreditProduct.Id,    UnitPrice = 1, IsActive = true);
+        PricebookEntry cancelFeeCreditPBE = new PricebookEntry(Pricebook2Id = stdPricebookId, Product2Id = cancelFeeCreditProduct.Id, UnitPrice = 1, IsActive = true);
+        PricebookEntry refundPBE          = new PricebookEntry(Pricebook2Id = stdPricebookId, Product2Id = refundProduct.Id,          UnitPrice = 1, IsActive = true);
+        PricebookEntry unappliedPBE       = new PricebookEntry(Pricebook2Id = stdPricebookId, Product2Id = unappliedProduct.Id,       UnitPrice = 1, IsActive = true);
+        insert new List<PricebookEntry>{ cancelFeePBE, cancelCreditPBE, cancelFeeCreditPBE, refundPBE, unappliedPBE };
+    }
+
+    /**
      * Best-effort DLRS bypass for tests to avoid hitting SOQL 101
      * from rollup automation. Uses dynamic SOQL so it works across
      * orgs using either the legacy custom object or the newer
@@ -371,6 +405,7 @@ private class TransferRegistrationControllerTest {
     @IsTest
     static void testExecuteCancellationWithRefund() {
         bypassAllDlrsRollups();
+        insertCancellationProducts();
 
         TestContext ctx = loadContext();
         Id attId = insertAttendee(ctx);
@@ -496,6 +531,7 @@ private class TransferRegistrationControllerTest {
     @IsTest
     static void testExecuteCancellation_RefundSettlement_AmountEqualsFee() {
         bypassAllDlrsRollups();
+        insertCancellationProducts();
 
         TestContext ctx = loadContext();
         Id attId = insertAttendee(ctx);
@@ -556,6 +592,7 @@ private class TransferRegistrationControllerTest {
     @IsTest
     static void testExecuteCancellation_UnappliedFundsSettlement_AmountEqualsFee() {
         bypassAllDlrsRollups();
+        insertCancellationProducts();
 
         TestContext ctx = loadContext();
         Id attId = insertAttendee(ctx);
@@ -609,6 +646,7 @@ private class TransferRegistrationControllerTest {
     @IsTest
     static void testExecuteCancellation_MissingCancelFeeProduct_Throws() {
         bypassAllDlrsRollups();
+        insertCancellationProducts();
 
         // Deactivate the Cancelation Fees PBE so the lookup misses, simulating the misconfigured-org case.
         PricebookEntry cancelFeePbeToDeactivate = [
